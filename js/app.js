@@ -34,23 +34,38 @@ const S = {
 
 // ── BOOT ──────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
-  // Always hide the global loader first so login screen is interactive
+  // Safety net — always hide loader after 8 seconds no matter what
+  const loaderTimeout = setTimeout(() => {
+    showLoader(false);
+    if (!S.user) {
+      el('loginScreen').style.display = 'flex';
+      showErr('Loading timed out. Please refresh the page.');
+    }
+  }, 8000);
+
   if (!initSB()) {
+    clearTimeout(loaderTimeout);
     showLoader(false);
     showCfgBanner();
     return;
   }
 
-  // Supabase is configured — check for existing session
-  const { data: { session } } = await sb.auth.getSession().catch(() => ({ data:{ session:null } }));
-  if (session) {
-    await boot(session.user);
-  } else {
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) {
+      await boot(session.user);
+    } else {
+      showLoader(false);
+    }
+  } catch(e) {
+    console.error('Session error:', e);
     showLoader(false);
+    el('loginScreen').style.display = 'flex';
   }
 
+  clearTimeout(loaderTimeout);
+
   sb.auth.onAuthStateChange(async (ev, sess) => {
-    // Only act on explicit sign in/out, not on TOKEN_REFRESHED or tab focus
     if (ev === 'SIGNED_IN' && sess && !S.user) await boot(sess.user);
     if (ev === 'SIGNED_OUT') showLoginScreen();
   });
@@ -59,29 +74,50 @@ window.addEventListener('DOMContentLoaded', async () => {
 async function boot(authUser) {
   if (S.user && S.user.id === authUser.id) return; // already booted, ignore
   showLoader(true);
-  const { data: prof, error } = await sb.from('profiles').select('*').eq('id', authUser.id).single();
-  if (error || !prof) { showLoader(false); showErr('Profile not found. Contact admin.'); return; }
 
-  S.user = authUser; S.profile = prof;
-  el('uc-name').textContent = shortName(prof.full_name);
-  el('uc-avatar').textContent = prof.full_name.charAt(0).toUpperCase();
-  el('loginScreen').style.display = 'none';
-  el('app').classList.add('on');
+  try {
+    const { data: prof, error } = await sb.from('profiles').select('*').eq('id', authUser.id).single();
 
-  if (prof.role === 'superadmin') {
-    buildNav('superadmin');
-    await renderSAProjects();
-    goPage('p-sa-projects');
-  } else {
-    await loadMyProjects();
-    buildNav(prof.role);
-    if (S.projects.length > 1) el('projSwitcher').style.display = 'flex';
-    if (S.curProj) {
-      await loadProjData();
-      renderDash();
-      goPage('p-dash');
-    } else { showErr('No projects assigned. Contact admin.'); }
+    if (error || !prof) {
+      console.error('Profile error:', error);
+      showLoader(false);
+      el('loginScreen').style.display = 'flex';
+      el('app').classList.remove('on');
+      showErr('Profile not found. Contact admin to set up your account.');
+      return;
+    }
+
+    S.user = authUser; S.profile = prof;
+    el('uc-name').textContent = shortName(prof.full_name);
+    el('uc-avatar').textContent = prof.full_name.charAt(0).toUpperCase();
+    el('loginScreen').style.display = 'none';
+    el('app').classList.add('on');
+
+    if (prof.role === 'superadmin') {
+      buildNav('superadmin');
+      goPage('p-sa-projects');
+      await renderSAProjects();
+    } else {
+      await loadMyProjects();
+      buildNav(prof.role);
+      if (S.projects.length > 1) el('projSwitcher').style.display = 'flex';
+      if (S.curProj) {
+        goPage('p-dash'); // show page immediately
+        await loadProjData();
+        renderDash();
+      } else {
+        showErr('No projects assigned. Contact your admin.');
+      }
+    }
+  } catch(e) {
+    console.error('Boot error:', e);
+    showLoader(false);
+    el('loginScreen').style.display = 'flex';
+    el('app').classList.remove('on');
+    showErr('Connection error: ' + e.message + '. Please refresh.');
+    return;
   }
+
   showLoader(false);
 }
 
@@ -1204,10 +1240,15 @@ function setBtn(id,loading){
 
 function showLoader(on){
   const l=el('globalLoader'); if(!l) return;
-  if(on){ l.classList.remove('hide','gone'); }
-  else {
+  if(on){
+    l.classList.remove('hide','gone');
+    l.style.display='flex';
+  } else {
     l.classList.add('hide');
-    setTimeout(()=>{ l.classList.add('gone'); },380);
+    setTimeout(()=>{
+      l.classList.add('gone');
+      l.style.display='none';
+    }, 380);
   }
 }
 function showErr(msg){ const e=el('loginError'); if(!e) return; e.textContent=msg; e.style.display='block'; }

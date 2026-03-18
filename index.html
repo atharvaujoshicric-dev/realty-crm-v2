@@ -1,68 +1,52 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RealtyFlow CRM</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏗</text></svg>">
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>RealtyFlow CRM</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏗</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
-<!-- ─── GLOBAL LOADER ─── -->
-<div id="globalLoader">
-  <div class="loader-brand">
-    <div class="loader-icon">🏗</div>
+<div id="loader">
+  <div class="ld-brand">
+    <div class="ld-icon">🏗</div>
     <h2>RealtyFlow CRM</h2>
-    <p>Loading your workspace</p>
-    <div class="loader-dots"><span></span><span></span><span></span></div>
+    <p>Loading workspace</p>
+    <div class="ld-dots"><span></span><span></span><span></span></div>
   </div>
 </div>
 <script>
-  // Emergency: if still loading after 6 seconds, force show login
-  window._loaderKill = setTimeout(function() {
-    var l = document.getElementById('globalLoader');
-    var ls = document.getElementById('loginScreen');
-    if (l) { l.style.display = 'none'; }
-    if (ls) { ls.style.display = 'flex'; }
-    console.warn('RealtyFlow: loader timeout — forcing login screen');
-  }, 6000);
+  window._lkill = setTimeout(function(){
+    document.getElementById('loader').style.display='none';
+    document.getElementById('loginWrap').style.display='flex';
+  }, 7000);
 </script>
 
-<!-- ─── LOGIN ─── -->
-<div id="loginScreen" style="display:flex;">
-  <div class="login-bg"></div>
-  <div class="login-grid-bg"></div>
+<div id="loginWrap" style="display:none">
+  <div class="login-bg"></div><div class="login-grid"></div>
   <div class="login-card">
     <div class="login-logo">
       <div class="login-logo-icon">🏗</div>
       <h1>RealtyFlow CRM</h1>
       <p>Real Estate Management Platform</p>
     </div>
-    <div id="loginError" class="login-error"></div>
+    <div id="loginErr" class="login-err"></div>
     <div class="login-form">
-      <div class="lf-group">
-        <label>Email Address</label>
+      <div class="lf-g"><label>Email Address</label>
         <input type="email" id="li-email" placeholder="you@company.com" autocomplete="email" onkeydown="if(event.key==='Enter')doLogin()">
       </div>
-      <div class="lf-group">
-        <label>Password</label>
+      <div class="lf-g"><label>Password</label>
         <input type="password" id="li-pass" placeholder="Your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
       </div>
-      <button class="login-btn" id="loginBtn" onclick="doLogin()">
-        <span>Sign In →</span>
-      </button>
+      <button class="login-btn" id="loginBtn" onclick="doLogin()">Sign In →</button>
     </div>
-    <div id="cfgBanner" style="display:none;"></div>
-    <div class="login-hint">Powered by RealtyFlow · Supabase Backend</div>
   </div>
 </div>
 
-<!-- ─── APP ─── -->
 <div id="app">
-
-  <!-- TOP NAV -->
   <nav class="nav">
     <div class="nav-brand">
       <div class="nav-brand-icon">🏗</div>
@@ -70,777 +54,442 @@
     </div>
     <div class="nav-tabs" id="navTabs"></div>
     <div class="nav-right">
-      <button id="sa-back-btn" onclick="backToProjects()" style="display:none;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:5px 13px;color:rgba(255,255,255,0.8);font-size:12px;cursor:pointer;font-family:'Outfit',sans-serif;transition:.2s;" onmouseover="this.style.background='rgba(255,255,255,0.14)'" onmouseout="this.style.background='rgba(255,255,255,0.08)'">
-        ← All Projects
-      </button>
-      <div class="proj-switcher" id="projSwitcher" onclick="openSwitcher()" style="display:none;">
-        <span style="font-size:15px;">🏘</span>
-        <div><div class="ps-name" id="ps-name">—</div><div class="ps-role" id="ps-role">—</div></div>
-        <span style="color:rgba(255,255,255,.35);font-size:10px;margin-left:2px;">▼</span>
+      <button class="back-btn" id="backBtn" onclick="backToProjects()">← All Projects</button>
+      <div class="proj-chip" id="projChip" onclick="openSwitcher()">
+        <div><div class="pc-name" id="pcName">—</div><div class="pc-role" id="pcRole">—</div></div>
+        <span style="color:rgba(255,255,255,.35);font-size:10px;">▼</span>
       </div>
       <div class="user-chip">
-        <span class="uc-name" id="uc-name">—</span>
-        <div class="avatar" id="uc-avatar">?</div>
+        <span class="uc-name" id="ucName">—</span>
+        <div class="avatar" id="ucAvatar">?</div>
       </div>
       <button class="logout-btn" onclick="doLogout()">Logout</button>
     </div>
   </nav>
 
-  <!-- ──────────────── PAGES ──────────────── -->
   <div class="content">
 
     <!-- SA: PROJECTS -->
-    <div class="page" id="p-sa-projects">
-      <div class="ph">
-        <div class="ph-left">
-          <h1>All Projects</h1>
-          <p>Create and manage every real estate project on the platform</p>
-        </div>
-        <div class="ph-right">
-          <button class="btn btn-gold" onclick="openProjModal()">＋ New Project</button>
-        </div>
+    <div class="page" id="p-sa-proj">
+      <div class="ph"><div><h1>All Projects</h1><p>Manage every real estate project on the platform</p></div>
+        <div class="ph-r"><button class="btn btn-gold" onclick="openProjModal()">＋ New Project</button></div>
       </div>
-      <div class="proj-grid" id="saGrid">
-        <div class="loading-cell"><div class="spin spin-ink"></div></div>
-      </div>
-    </div>
-
-    <!-- SA: IMPORT -->
-    <div class="page" id="p-sa-import">
-      <div class="ph">
-        <div class="ph-left">
-          <h1>Import from Excel</h1>
-          <p>Upload your existing Excel workbook and map columns to import all data into a project</p>
-        </div>
-      </div>
-
-      <!-- Step 1: Upload -->
-      <div id="import-step-1">
-        <div class="card" style="max-width:640px;">
-          <div class="card-hd"><span class="card-hd-title">Step 1 — Select Project &amp; Upload File</span></div>
-          <div class="card-body" style="display:flex;flex-direction:column;gap:18px;">
-            <div class="fg">
-              <label>Target Project *</label>
-              <select id="import-project-sel">
-                <option value="">— Select Project —</option>
-              </select>
-            </div>
-            <div class="fg">
-              <label>Excel File (.xlsx, .xls)</label>
-              <div style="border:2px dashed var(--border);border-radius:var(--r);padding:32px 20px;text-align:center;cursor:pointer;transition:border-color .2s;"
-                onclick="el('import-file-input').click()"
-                ondragover="event.preventDefault();this.style.borderColor='var(--gold)'"
-                ondragleave="this.style.borderColor='var(--border)'"
-                ondrop="event.preventDefault();this.style.borderColor='var(--border)';el('import-file-input').files=event.dataTransfer.files;onImportFileChange(el('import-file-input'))">
-                <div style="font-size:32px;margin-bottom:10px;">📊</div>
-                <div style="font-weight:600;font-size:14px;margin-bottom:4px;">Click to upload or drag &amp; drop</div>
-                <div style="font-size:12px;color:var(--ink-faint);">Supports .xlsx and .xls files</div>
-                <div id="import-filename" style="margin-top:10px;font-size:13px;color:var(--gold);font-weight:500;"></div>
-              </div>
-              <input type="file" id="import-file-input" accept=".xlsx,.xls" style="display:none;" onchange="onImportFileChange(this)">
-            </div>
-            <div style="display:flex;gap:10px;">
-              <button class="btn btn-gold" id="import-parse-btn" onclick="parseImportFile()" disabled>
-                Next: Map Columns →
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Step 2: Map Columns -->
-      <div id="import-step-2" style="display:none;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-          <div>
-            <div style="font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:700;">Step 2 — Map Your Columns</div>
-            <div style="font-size:12px;color:var(--ink-faint);margin-top:3px;">For each sheet, choose what it contains and map your Excel columns to CRM fields. Auto-detected where possible.</div>
-          </div>
-          <div style="display:flex;gap:10px;">
-            <button class="btn btn-outline" onclick="resetImportState()">← Back</button>
-            <button class="btn btn-gold" onclick="previewImport()">Next: Preview →</button>
-          </div>
-        </div>
-        <div id="sheet-mapping-list"></div>
-        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px;">
-          <button class="btn btn-outline" onclick="resetImportState()">← Back</button>
-          <button class="btn btn-gold" onclick="previewImport()">Next: Preview →</button>
-        </div>
-      </div>
-
-      <!-- Step 3: Preview & Confirm -->
-      <div id="import-step-3" style="display:none;">
-        <div class="card" style="max-width:640px;">
-          <div class="card-hd"><span class="card-hd-title">Step 3 — Confirm Import</span></div>
-          <div class="card-body">
-            <div id="import-summary"></div>
-            <div style="margin:16px 0;padding:14px 16px;background:var(--gold-lt);border:1px solid var(--gold-border);border-radius:var(--r-sm);display:flex;align-items:center;gap:12px;">
-              <span style="font-size:24px;">📥</span>
-              <div>
-                <div style="font-weight:600;">Ready to import <span id="import-total">0</span> total records</div>
-                <div style="font-size:12px;color:var(--ink-faint);">This will add records to the project. Existing data will not be deleted.</div>
-              </div>
-            </div>
-            <!-- Progress bar -->
-            <div id="import-progress" style="display:none;margin-bottom:16px;">
-              <div id="import-progress-text" style="font-size:13px;color:var(--ink-light);margin-bottom:6px;"></div>
-              <div style="height:8px;background:var(--paper-2);border-radius:4px;overflow:hidden;">
-                <div id="import-progress-bar" style="height:100%;width:0%;background:var(--gold);border-radius:4px;transition:width .3s;"></div>
-              </div>
-            </div>
-            <div style="display:flex;gap:10px;">
-              <button class="btn btn-outline" onclick="el('import-step-2').style.display='';el('import-step-3').style.display='none';">← Back</button>
-              <button class="btn btn-gold" id="import-confirm-btn" onclick="runImport()">🚀 Run Import</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Result -->
-      <div id="import-result" style="display:none;">
-        <div class="card" style="max-width:480px;">
-          <div class="card-hd"><span class="card-hd-title">Import Complete</span></div>
-          <div class="card-body" style="text-align:center;padding:28px;">
-            <div style="font-size:48px;margin-bottom:16px;">✅</div>
-            <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700;margin-bottom:6px;">
-              <span id="import-result-ok">0</span> records imported
-            </div>
-            <div style="font-size:13px;color:var(--ink-faint);margin-bottom:20px;">
-              <span id="import-result-err">0</span> errors
-            </div>
-            <div style="display:flex;gap:10px;justify-content:center;">
-              <button class="btn btn-outline" onclick="resetImportState()">Import Another File</button>
-              <button class="btn btn-gold" onclick="navigate('p-sa-projects')">View Projects →</button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <div class="proj-grid" id="saGrid"></div>
     </div>
 
     <!-- SA: USERS -->
     <div class="page" id="p-sa-users">
-      <div class="ph">
-        <div class="ph-left"><h1>Platform Users</h1><p>All users across every project</p></div>
-        <div class="ph-right"><button class="btn btn-gold" onclick="openUserModal()">＋ Add User</button></div>
+      <div class="ph"><div><h1>Platform Users</h1><p>All users across every project</p></div>
+        <div class="ph-r"><button class="btn btn-gold" onclick="openUserModal()">＋ Add User</button></div>
       </div>
       <div class="card"><div class="users-list" id="saUsersList"></div></div>
+    </div>
+
+    <!-- SA: IMPORT -->
+    <div class="page" id="p-sa-import">
+      <div class="ph"><div><h1>Import from Excel</h1><p>Upload an existing workbook and map columns to import data into a project</p></div></div>
+      <div id="imp-s1">
+        <div class="card" style="max-width:620px">
+          <div class="card-hd"><span class="card-hd-title">Step 1 — Select Project & Upload File</span></div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
+            <div class="fg"><label>Target Project *</label><select id="imp-proj"><option value="">— Select Project —</option></select></div>
+            <div class="fg"><label>Excel File (.xlsx, .xls)</label>
+              <div class="drop-zone" id="dropZone" onclick="el('imp-file').click()"
+                ondragover="event.preventDefault();this.classList.add('drag-over')"
+                ondragleave="this.classList.remove('drag-over')"
+                ondrop="event.preventDefault();this.classList.remove('drag-over');el('imp-file').files=event.dataTransfer.files;onFileChange(el('imp-file'))">
+                <div style="font-size:32px;margin-bottom:8px">📊</div>
+                <div style="font-weight:600;font-size:14px;margin-bottom:3px">Click to upload or drag & drop</div>
+                <div style="font-size:12px;color:var(--inkf)">.xlsx and .xls files supported</div>
+                <div id="imp-fname" style="margin-top:8px;font-size:13px;color:var(--gold);font-weight:500"></div>
+              </div>
+              <input type="file" id="imp-file" accept=".xlsx,.xls" style="display:none" onchange="onFileChange(this)">
+            </div>
+            <button class="btn btn-gold" id="imp-parse-btn" onclick="parseFile()" disabled>Next: Map Columns →</button>
+          </div>
+        </div>
+      </div>
+      <div id="imp-s2" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+          <div><h2 style="font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:700">Step 2 — Map Columns</h2>
+            <p style="font-size:12px;color:var(--inkf);margin-top:2px">For each sheet, choose what it contains and map Excel columns to CRM fields. Auto-detected where possible.</p></div>
+          <div style="display:flex;gap:9px"><button class="btn btn-outline" onclick="resetImport()">← Back</button><button class="btn btn-gold" onclick="previewImport()">Next: Preview →</button></div>
+        </div>
+        <div id="sheetMaps"></div>
+        <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:14px">
+          <button class="btn btn-outline" onclick="resetImport()">← Back</button>
+          <button class="btn btn-gold" onclick="previewImport()">Next: Preview →</button>
+        </div>
+      </div>
+      <div id="imp-s3" style="display:none">
+        <div class="card" style="max-width:620px">
+          <div class="card-hd"><span class="card-hd-title">Step 3 — Confirm Import</span></div>
+          <div class="card-body">
+            <div id="imp-summary"></div>
+            <div style="margin:14px 0;padding:14px 16px;background:var(--goldl);border:1px solid var(--goldb);border-radius:8px;display:flex;align-items:center;gap:12px">
+              <span style="font-size:22px">📥</span>
+              <div><div style="font-weight:600">Ready to import <span id="imp-total">0</span> records</div>
+                <div style="font-size:12px;color:var(--inkl)">Existing data will not be deleted.</div></div>
+            </div>
+            <div id="imp-progress" style="display:none;margin-bottom:14px">
+              <div id="imp-prog-text" style="font-size:13px;color:var(--inkl);margin-bottom:6px"></div>
+              <div style="height:8px;background:var(--paper2);border-radius:4px;overflow:hidden"><div id="imp-prog-bar" style="height:100%;width:0%;background:var(--gold);border-radius:4px;transition:width .3s"></div></div>
+            </div>
+            <div style="display:flex;gap:9px">
+              <button class="btn btn-outline" onclick="el('imp-s2').style.display='';el('imp-s3').style.display='none'">← Back</button>
+              <button class="btn btn-gold" id="imp-confirm" onclick="runImport()">🚀 Run Import</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="imp-result" style="display:none">
+        <div class="card" style="max-width:460px">
+          <div class="card-body" style="text-align:center;padding:28px">
+            <div style="font-size:44px;margin-bottom:14px">✅</div>
+            <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700;margin-bottom:5px"><span id="imp-ok">0</span> records imported</div>
+            <div style="font-size:13px;color:var(--inkf);margin-bottom:18px"><span id="imp-err">0</span> errors</div>
+            <div style="display:flex;gap:9px;justify-content:center">
+              <button class="btn btn-outline" onclick="resetImport()">Import Another</button>
+              <button class="btn btn-gold" onclick="navigate('p-sa-proj')">View Projects →</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- DASHBOARD -->
     <div class="page" id="p-dash">
       <div class="ph">
-        <div class="ph-left"><h1 id="dash-title">Dashboard</h1><p id="dash-sub">Project overview</p></div>
-        <div class="ph-right">
-          <button class="btn btn-gold" id="dashNewBk" onclick="openBkModal()" style="display:none;">＋ New Booking</button>
+        <div><h1 id="dashTitle">Dashboard</h1><p id="dashSub">Project overview</p></div>
+        <div class="ph-r">
+          <button class="btn btn-outline" onclick="downloadProjectExcel()" title="Download all project data as Excel">⬇ Download Excel</button>
+          <button class="btn btn-gold" id="dashNewBk" style="display:none" onclick="openBkModal()">＋ New Booking</button>
         </div>
       </div>
-      <div class="stats-row" id="dash-stats"></div>
-      <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:18px;">
+      <div class="stats-row" id="dashStats"></div>
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:18px">
         <div class="card">
-          <div class="card-hd"><span class="card-hd-title">Recent Bookings</span>
-            <button class="btn btn-ghost btn-sm" onclick="navigate('p-bookings')">View All →</button></div>
-          <div class="tw"><table><thead><tr><th>Client</th><th>Plot</th><th>Value</th><th>Bank</th><th>Status</th></tr></thead>
-          <tbody id="dash-recent"></tbody></table></div>
+          <div class="card-hd"><span class="card-hd-title">Recent Bookings</span><button class="btn btn-ghost btn-sm" onclick="navigate('p-bookings')">View All →</button></div>
+          <div class="tw"><table><thead><tr><th>Client</th><th>Plot</th><th>Value</th><th>Bank</th><th>Status</th></tr></thead><tbody id="dashRecent"></tbody></table></div>
         </div>
-        <div class="card">
-          <div class="card-hd"><span class="card-hd-title">Bank Breakdown</span></div>
-          <div class="card-body" id="dash-bank"></div>
-        </div>
+        <div class="card"><div class="card-hd"><span class="card-hd-title">Bank Breakdown</span></div><div class="card-body" id="dashBank"></div></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-        <div class="card"><div class="card-hd"><span class="card-hd-title">Disbursement Overview</span></div><div class="card-body" id="dash-disb"></div></div>
-        <div class="card"><div class="card-hd"><span class="card-hd-title">Financing Split</span></div><div class="card-body" id="dash-fin"></div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="card"><div class="card-hd"><span class="card-hd-title">Disbursement Overview</span></div><div class="card-body" id="dashDisb"></div></div>
+        <div class="card"><div class="card-hd"><span class="card-hd-title">Financing Split</span></div><div class="card-body" id="dashFin"></div></div>
       </div>
     </div>
 
     <!-- BOOKINGS -->
     <div class="page" id="p-bookings">
       <div class="ph">
-        <div class="ph-left"><h1>Bookings Register</h1><p>All plot bookings for this project</p></div>
-        <div class="ph-right">
-          <button class="btn btn-outline btn-sm" onclick="dlTableCSV('bookings')">⬇ Export CSV</button>
-          <button class="btn btn-gold" id="newBkBtn" onclick="openBkModal()" style="display:none;">＋ New Booking</button>
+        <div><h1>Bookings Register</h1><p>All plot bookings for this project</p></div>
+        <div class="ph-r">
+          <button class="btn btn-outline btn-sm" onclick="dlCSV('bookings')">⬇ CSV</button>
+          <button class="btn btn-gold" id="bkNewBtn" style="display:none" onclick="openBkModal()">＋ New Booking</button>
         </div>
       </div>
       <div class="card">
         <div class="frow">
-          <input type="text" id="bk-srch" placeholder="🔍  Name, plot, contact…" oninput="renderBookings()" style="width:210px;">
-          <select id="bk-bank" onchange="renderBookings()">
-            <option value="">All Banks</option>
-            <option>HDFC</option><option>IDBI</option><option>Axis</option>
-            <option>ICICI</option><option>SBI</option><option>Self</option><option>Tata Capital</option><option>Other</option>
-          </select>
-          <select id="bk-sts" onchange="renderBookings()">
-            <option value="">All Statuses</option>
-            <option>File Given</option><option>Under Process</option>
-            <option>Sanction Received</option><option>Disbursement Done</option>
-            <option>Agreement Completed</option><option>Cancelled</option>
-          </select>
-          <select id="bk-dis" onchange="renderBookings()">
-            <option value="">Disbursement</option><option>Done</option><option>Pending</option>
-          </select>
-          <button class="btn btn-ghost btn-sm" onclick="clearBkF()">✕ Clear</button>
-          <span class="fcount" id="bk-cnt"></span>
+          <input type="text" id="bk-s" placeholder="🔍 Name, plot, contact…" oninput="renderBookings()" style="width:210px">
+          <select id="bk-bank" onchange="renderBookings()"><option value="">All Banks</option><option>HDFC</option><option>IDBI</option><option>Axis</option><option>ICICI</option><option>SBI</option><option>Self</option><option>Tata Capital</option><option>Other</option></select>
+          <select id="bk-sts" onchange="renderBookings()"><option value="">All Statuses</option><option>File Given</option><option>Under Process</option><option>Sanction Received</option><option>Disbursement Done</option><option>Agreement Completed</option><option>Cancelled</option></select>
+          <select id="bk-dis" onchange="renderBookings()"><option value="">Disbursement</option><option>Done</option><option>Pending</option></select>
+          <button class="btn btn-ghost btn-sm" onclick="clearBkF()">✕</button>
+          <span class="fcount" id="bkCnt"></span>
         </div>
-        <div class="tw">
-          <table>
-            <thead id="bk-thead"></thead>
-            <tbody id="bk-tbody"></tbody>
-          </table>
-        </div>
+        <div class="tw"><table><thead id="bkHead"></thead><tbody id="bkBody"></tbody></table></div>
       </div>
     </div>
 
     <!-- PIPELINE -->
     <div class="page" id="p-pipeline">
-      <div class="ph">
-        <div class="ph-left"><h1>Loan Pipeline</h1><p>Track every file from submission to disbursement</p></div>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px;" id="pipe-stats"></div>
+      <div class="ph"><div><h1>Loan Pipeline</h1><p>Track every file from submission to disbursement</p></div></div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px" id="pipeStats"></div>
       <div class="kanban" id="kanban"></div>
     </div>
 
     <!-- CHEQUES -->
     <div class="page" id="p-cheques">
       <div class="ph">
-        <div class="ph-left"><h1>Cheque Register</h1><p>All payments — RPM, SM, transfers, cash</p></div>
-        <div class="ph-right">
-          <button class="btn btn-outline btn-sm" onclick="dlTableCSV('cheques')">⬇ Export CSV</button>
-          <button class="btn btn-gold" id="newChqBtn" onclick="openChqModal()" style="display:none;">＋ Add Entry</button>
+        <div><h1>Cheque Register</h1><p>All payments — RPM, SM, transfers, cash</p></div>
+        <div class="ph-r">
+          <button class="btn btn-outline btn-sm" onclick="dlCSV('cheques')">⬇ CSV</button>
+          <button class="btn btn-gold" id="chqNewBtn" style="display:none" onclick="openChqModal()">＋ Add Entry</button>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px;" id="chq-summary"></div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px" id="chqSummary"></div>
       <div class="card">
         <div class="frow">
-          <input type="text" id="chq-srch" placeholder="🔍  Customer, cheque no…" oninput="renderCheques()" style="width:210px;">
-          <select id="chq-typ" onchange="renderCheques()">
-            <option value="">All Types</option><option>RPM</option><option>SM</option><option>cash</option><option>BOUNCE</option><option>NILL</option>
-          </select>
+          <input type="text" id="chq-s" placeholder="🔍 Customer, cheque no…" oninput="renderCheques()" style="width:210px">
+          <select id="chq-t" onchange="renderCheques()"><option value="">All Types</option><option>RPM</option><option>SM</option><option>cash</option><option>BOUNCE</option><option>NILL</option></select>
         </div>
-        <div class="tw">
-          <table>
-            <thead id="chq-thead"></thead>
-            <tbody id="chq-tbody"></tbody>
-          </table>
-        </div>
+        <div class="tw"><table><thead id="chqHead"></thead><tbody id="chqBody"></tbody></table></div>
       </div>
     </div>
 
     <!-- PREV TEAM -->
     <div class="page" id="p-prev">
       <div class="ph">
-        <div class="ph-left"><h1>Previous Team Bookings</h1><p>Legacy records from prior team</p></div>
-        <div class="ph-right">
-          <button class="btn btn-outline btn-sm" onclick="dlTableCSV('prev')">⬇ Export CSV</button>
-          <button class="btn btn-outline btn-sm" id="prevNewBtn" onclick="openPrevModal()" style="display:none;">＋ Add Entry</button>
+        <div><h1>Previous Team Bookings</h1><p>Legacy records from prior team</p></div>
+        <div class="ph-r">
+          <button class="btn btn-outline btn-sm" onclick="dlCSV('prev')">⬇ CSV</button>
+          <button class="btn btn-outline btn-sm" id="prevNewBtn" style="display:none" onclick="openPrevModal()">＋ Add Entry</button>
         </div>
       </div>
-      <div class="card">
-        <div class="tw">
-          <table>
-            <thead><tr><th>#</th><th>Customer Name</th><th>Plot No.</th><th>Plot Size (sqft)</th><th>Agreement Value</th><th>Notes</th></tr></thead>
-            <tbody id="prev-tbody"></tbody>
-          </table>
-        </div>
-      </div>
+      <div class="card"><div class="tw"><table><thead><tr><th>#</th><th>Customer</th><th>Plot No.</th><th>Size (sqft)</th><th>Agr. Value</th><th>Notes</th><th>Actions</th></tr></thead><tbody id="prevBody"></tbody></table></div></div>
     </div>
 
     <!-- ANALYTICS -->
     <div class="page" id="p-analytics">
       <div class="ph">
-        <div class="ph-left"><h1>Analytics &amp; Reports</h1><p>Visual summaries — download any chart as PNG or data as CSV</p></div>
-        <div class="ph-right">
-          <button class="btn btn-outline btn-sm" onclick="dlTableCSV('bookings')">⬇ Bookings CSV</button>
-          <button class="btn btn-outline btn-sm" onclick="dlTableCSV('cheques')">⬇ Cheques CSV</button>
+        <div><h1>Analytics & Reports</h1><p>Visual summaries — download charts as PNG or data as CSV</p></div>
+        <div class="ph-r">
+          <button class="btn btn-outline btn-sm" onclick="downloadProjectExcel()">⬇ Full Excel Export</button>
         </div>
       </div>
-
-      <div class="stats-row" id="anal-stats" style="margin-bottom:20px;"></div>
-
-      <div class="charts-grid" style="margin-bottom:18px;">
-        <div class="card">
-          <div class="card-hd">
-            <span class="card-hd-title">Loan Status Distribution</span>
-            <button class="dl-btn" onclick="dlChart('c-status','loan_status_chart')">⬇ PNG</button>
-          </div>
-          <div class="card-body"><div class="chart-wrap"><canvas id="c-status"></canvas></div></div>
-        </div>
-        <div class="card">
-          <div class="card-hd">
-            <span class="card-hd-title">Bank-wise Bookings</span>
-            <button class="dl-btn" onclick="dlChart('c-bank','bank_bookings_chart')">⬇ PNG</button>
-          </div>
-          <div class="card-body"><div class="chart-wrap"><canvas id="c-bank"></canvas></div></div>
-        </div>
+      <div class="stats-row" id="analStats" style="margin-bottom:20px"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div class="card"><div class="card-hd"><span class="card-hd-title">Loan Status Distribution</span><button class="dl-btn" onclick="dlChart('c-status','loan_status')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-status"></canvas></div></div></div>
+        <div class="card"><div class="card-hd"><span class="card-hd-title">Bank-wise Bookings</span><button class="dl-btn" onclick="dlChart('c-bank','bank_bookings')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-bank"></canvas></div></div></div>
       </div>
-
-      <div class="charts-grid" style="margin-bottom:18px;">
-        <div class="card">
-          <div class="card-hd">
-            <span class="card-hd-title">Monthly Booking Trend</span>
-            <button class="dl-btn" onclick="dlChart('c-monthly','monthly_trend_chart')">⬇ PNG</button>
-          </div>
-          <div class="card-body"><div class="chart-wrap chart-wrap-lg"><canvas id="c-monthly"></canvas></div></div>
-        </div>
-        <div class="card">
-          <div class="card-hd">
-            <span class="card-hd-title">Agreement Value by Bank (₹L)</span>
-            <button class="dl-btn" onclick="dlChart('c-value','value_by_bank_chart')">⬇ PNG</button>
-          </div>
-          <div class="card-body"><div class="chart-wrap chart-wrap-lg"><canvas id="c-value"></canvas></div></div>
-        </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div class="card"><div class="card-hd"><span class="card-hd-title">Monthly Booking Trend</span><button class="dl-btn" onclick="dlChart('c-monthly','monthly_trend')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap" style="height:280px"><canvas id="c-monthly"></canvas></div></div></div>
+        <div class="card"><div class="card-hd"><span class="card-hd-title">Agreement Value by Bank (₹L)</span><button class="dl-btn" onclick="dlChart('c-value','value_by_bank')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap" style="height:280px"><canvas id="c-value"></canvas></div></div></div>
       </div>
-
-      <div class="charts-grid">
-        <div class="card">
-          <div class="card-hd">
-            <span class="card-hd-title">Disbursement Status</span>
-            <button class="dl-btn" onclick="dlChart('c-disb','disbursement_status_chart')">⬇ PNG</button>
-          </div>
-          <div class="card-body"><div class="chart-wrap"><canvas id="c-disb"></canvas></div></div>
-        </div>
-        <div class="card">
-          <div class="card-hd">
-            <span class="card-hd-title">Collections by Payment Type (₹L)</span>
-            <button class="dl-btn" onclick="dlChart('c-payment','payment_type_chart')">⬇ PNG</button>
-          </div>
-          <div class="card-body"><div class="chart-wrap"><canvas id="c-payment"></canvas></div></div>
-        </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="card"><div class="card-hd"><span class="card-hd-title">Disbursement Status</span><button class="dl-btn" onclick="dlChart('c-disb','disbursement')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-disb"></canvas></div></div></div>
+        <div class="card"><div class="card-hd"><span class="card-hd-title">Collections by Type (₹L)</span><button class="dl-btn" onclick="dlChart('c-pay','collections')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-pay"></canvas></div></div></div>
       </div>
     </div>
 
     <!-- SETTINGS -->
     <div class="page" id="p-settings">
-      <div class="ph">
-        <div class="ph-left"><h1>Project Settings</h1><p>Configure details, users, and custom fields</p></div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+      <div class="ph"><div><h1>Project Settings</h1><p>Configure details, users and custom fields</p></div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
         <div>
-          <div class="card" style="margin-bottom:18px;">
+          <div class="card" style="margin-bottom:18px">
             <div class="card-hd"><span class="card-hd-title">Project Details</span></div>
-            <div class="card-body">
-              <div style="display:flex;flex-direction:column;gap:14px;">
-                <div class="fg"><label>Project Name</label><input type="text" id="set-name"></div>
-                <div class="fg"><label>Location</label><input type="text" id="set-loc"></div>
-                <div class="fg"><label>Developer / Builder</label><input type="text" id="set-dev"></div>
-                <div class="fg"><label>RERA Number</label><input type="text" id="set-rera"></div>
-                <div class="fg"><label>Total Plots</label><input type="number" id="set-plots"></div>
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
-                  <div class="fg"><label>Infra (₹/sqft)</label><input type="number" id="set-infra"></div>
-                  <div class="fg"><label>Legal (₹)</label><input type="number" id="set-legal"></div>
-                  <div class="fg"><label>SDR Rate (%)</label><input type="number" id="set-sdr" step="0.1"></div>
-                </div>
-                <button class="btn btn-primary" onclick="saveSettings()">Save Changes</button>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:13px">
+              <div class="fg"><label>Project Name</label><input type="text" id="set-name"></div>
+              <div class="fg"><label>Location</label><input type="text" id="set-loc"></div>
+              <div class="fg"><label>Developer / Builder</label><input type="text" id="set-dev"></div>
+              <div class="fg"><label>RERA Number</label><input type="text" id="set-rera"></div>
+              <div class="fg"><label>Total Plots</label><input type="number" id="set-plots"></div>
+              <div class="form3">
+                <div class="fg"><label>Infra (₹/sqft)</label><input type="number" id="set-infra"></div>
+                <div class="fg"><label>Legal (₹)</label><input type="number" id="set-legal"></div>
+                <div class="fg"><label>SDR Rate (%)</label><input type="number" id="set-sdr" step="0.1"></div>
               </div>
+              <button class="btn btn-primary" onclick="saveSettings()">Save Changes</button>
             </div>
           </div>
-
-          <!-- Custom Fields -->
           <div class="card">
-            <div class="card-hd">
-              <span class="card-hd-title">Custom Fields</span>
-              <button class="btn btn-gold btn-sm" onclick="openCFModal()">＋ Add Field</button>
-            </div>
+            <div class="card-hd"><span class="card-hd-title">Custom Fields</span><button class="btn btn-gold btn-sm" onclick="openCFModal()">＋ Add Field</button></div>
             <div class="card-body">
-              <p style="font-size:12px;color:var(--ink-faint);margin-bottom:12px;">Add project-specific fields that appear in Booking or Cheque forms and tables.</p>
-              <div class="cf-list" id="cf-list"></div>
+              <p style="font-size:12px;color:var(--inkf);margin-bottom:12px">Add project-specific fields that appear in Booking or Cheque forms.</p>
+              <div id="cfList"></div>
             </div>
           </div>
         </div>
-
-        <!-- Project Users -->
         <div class="card">
-          <div class="card-hd">
-            <span class="card-hd-title">Project Users</span>
-            <button class="btn btn-gold btn-sm" onclick="openUserModal(true)">＋ Add User</button>
-          </div>
-          <div class="users-list" id="proj-users-list"></div>
+          <div class="card-hd"><span class="card-hd-title">Project Users</span><button class="btn btn-gold btn-sm" onclick="openUserModal(true)">＋ Add User</button></div>
+          <div class="users-list" id="projUsers"></div>
         </div>
       </div>
     </div>
 
-  </div><!-- /content -->
-</div><!-- /app -->
-
-<!-- ════════ MODALS ════════ -->
-
-<!-- Config -->
-<div class="overlay" id="cfgM">
-  <div class="modal modal-sm">
-    <div class="mhd"><div><div class="mhd-title">Connect Supabase</div><div class="mhd-sub">From supabase.com → Settings → API</div></div></div>
-    <div class="mbody">
-      <div style="display:flex;flex-direction:column;gap:14px;">
-        <div class="fg"><label>Project URL</label><input type="text" id="cfg-url" placeholder="https://xxxx.supabase.co"></div>
-        <div class="fg"><label>Anon (Public) Key</label><textarea id="cfg-key" rows="3" placeholder="eyJhbGci…"></textarea></div>
-        <div style="background:var(--gold-lt);border:1px solid var(--gold-border);border-radius:8px;padding:12px;font-size:12px;color:var(--gold);line-height:1.6;">
-          Credentials are saved in your browser's localStorage only.
-        </div>
-      </div>
-    </div>
-    <div class="mfoot"><button class="btn btn-gold" onclick="saveCfg()">Save &amp; Connect</button></div>
   </div>
 </div>
 
+<!-- ════ MODALS ════ -->
+
 <!-- Project Modal -->
-<div class="overlay" id="projM">
+<div class="overlay" id="projModal">
   <div class="modal modal-lg">
-    <div class="mhd">
-      <div><div class="mhd-title" id="pm-title">New Project</div><div class="mhd-sub">Create a project and provision its users</div></div>
-      <button class="mclose" onclick="closeM('projM')">✕</button>
-    </div>
+    <div class="mhd"><div><div class="mhd-title" id="projMTitle">New Project</div><div class="mhd-sub">Create project and provision user accounts</div></div><button class="mclose" onclick="closeM('projModal')">✕</button></div>
     <div class="mbody">
-      <div class="form-2">
-        <div class="f-section">Project Information</div>
+      <div class="form2">
+        <div class="fsec">Project Details</div>
         <div class="fg full"><label>Project Name *</label><input type="text" id="pm-name" placeholder="e.g. Song of the River"></div>
         <div class="fg"><label>Location *</label><input type="text" id="pm-loc" placeholder="Pune, Maharashtra"></div>
         <div class="fg"><label>Developer / Builder</label><input type="text" id="pm-dev"></div>
         <div class="fg"><label>RERA Number</label><input type="text" id="pm-rera"></div>
         <div class="fg"><label>Total Plots</label><input type="number" id="pm-plots" value="100"></div>
         <div class="fg"><label>Launch Date</label><input type="date" id="pm-launch"></div>
-        <div class="fg"><label>Project Code (auto-generated if blank)</label><input type="text" id="pm-code" placeholder="e.g. SOTR-001" style="text-transform:uppercase;letter-spacing:1px;font-weight:600;"></div>
-
-        <div class="f-section">Default Financials</div>
+        <div class="fsec">Default Financials</div>
         <div class="fg"><label>Infra Charge (₹/sqft)</label><input type="number" id="pm-infra" value="100"></div>
         <div class="fg"><label>Legal Charges (₹)</label><input type="number" id="pm-legal" value="25000"></div>
         <div class="fg"><label>SDR Rate (%)</label><input type="number" id="pm-sdr" value="6" step="0.1"></div>
         <div class="fg"><label>Default Maintenance (₹)</label><input type="number" id="pm-maint" value="0"></div>
-
-        <div class="f-section">Project Admin Account</div>
-        <div style="grid-column:1/-1;background:var(--gold-lt);border:1px solid var(--gold-border);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--gold);line-height:1.6;">
-          ℹ️ Users will receive a sign-up confirmation email. Make sure <strong>Confirm email is OFF</strong> in Supabase → Authentication → Sign In / Sign Up.
-        </div>
-        <div class="fg"><label>Admin Full Name</label><input type="text" id="pm-aname" placeholder="Rajesh Sharma"></div>
-        <div class="fg"><label>Admin Email</label><input type="email" id="pm-amail" placeholder="admin@company.com"></div>
-        <div class="fg full"><label>Admin Password (min 8 chars)</label><input type="password" id="pm-apass" placeholder="Min 8 characters"></div>
-
-        <div class="f-section">Sales Login (Optional)</div>
-        <div class="fg"><label>Sales Full Name</label><input type="text" id="pm-sname" placeholder="Priya Mehta"></div>
-        <div class="fg"><label>Sales Email</label><input type="email" id="pm-smail" placeholder="sales@company.com"></div>
-        <div class="fg full"><label>Sales Password (min 8 chars)</label><input type="password" id="pm-spass" placeholder="Min 8 characters"></div>
+        <div class="fsec">Project Admin *</div>
+        <div class="fg"><label>Full Name *</label><input type="text" id="pm-aname" placeholder="Rajesh Sharma"></div>
+        <div class="fg"><label>Email *</label><input type="email" id="pm-amail" placeholder="admin@company.com"></div>
+        <div class="fg full"><label>Password * (min 8 chars)</label><input type="password" id="pm-apass"></div>
+        <div class="fsec">Sales Login (Optional)</div>
+        <div class="fg"><label>Full Name</label><input type="text" id="pm-sname"></div>
+        <div class="fg"><label>Email</label><input type="email" id="pm-smail"></div>
+        <div class="fg full"><label>Password (min 8 chars)</label><input type="password" id="pm-spass"></div>
       </div>
     </div>
-    <div class="mfoot">
-      <button class="btn btn-outline" onclick="closeM('projM')">Cancel</button>
-      <button class="btn btn-gold" id="pm-savebtn" onclick="saveProj()">🏗 Create Project</button>
-    </div>
+    <div class="mfoot"><button class="btn btn-outline" onclick="closeM('projModal')">Cancel</button><button class="btn btn-gold" id="pm-save" onclick="saveProject()">🏗 Create Project</button></div>
   </div>
 </div>
 
 <!-- User Modal -->
-<div class="overlay" id="userM">
+<div class="overlay" id="userModal">
   <div class="modal modal-sm">
-    <div class="mhd">
-      <div><div class="mhd-title" id="um-title">Add User</div></div>
-      <button class="mclose" onclick="closeM('userM')">✕</button>
-    </div>
+    <div class="mhd"><div><div class="mhd-title" id="umTitle">Add User</div></div><button class="mclose" onclick="closeM('userModal')">✕</button></div>
     <div class="mbody">
-      <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="display:flex;flex-direction:column;gap:13px">
         <div class="fg"><label>Full Name *</label><input type="text" id="um-name"></div>
         <div class="fg"><label>Email *</label><input type="email" id="um-email"></div>
-        <div class="fg"><label>Password *</label><input type="password" id="um-pass" placeholder="Min 8 characters"></div>
-        <div class="fg"><label>Role *</label>
-          <select id="um-role"><option value="admin">Project Admin</option><option value="sales">Sales</option></select>
-        </div>
-        <div class="fg" id="um-proj-grp">
-          <label>Assign to Project</label>
-          <select id="um-proj"></select>
-        </div>
+        <div class="fg"><label>Password * (min 8 chars)</label><input type="password" id="um-pass"></div>
+        <div class="fg"><label>Role *</label><select id="um-role"><option value="admin">Project Admin</option><option value="sales">Sales</option></select></div>
+        <div class="fg" id="um-proj-g"><label>Assign to Project *</label><select id="um-proj"></select></div>
       </div>
     </div>
-    <div class="mfoot">
-      <button class="btn btn-outline" onclick="closeM('userM')">Cancel</button>
-      <button class="btn btn-gold" id="um-savebtn" onclick="saveUser()">Save User</button>
+    <div class="mfoot"><button class="btn btn-outline" onclick="closeM('userModal')">Cancel</button><button class="btn btn-gold" id="um-save" onclick="saveUser()">Save User</button></div>
+  </div>
+</div>
+
+<!-- Edit User Modal -->
+<div class="overlay" id="editUserModal">
+  <div class="modal modal-sm">
+    <div class="mhd"><div><div class="mhd-title">Edit User</div></div><button class="mclose" onclick="closeM('editUserModal')">✕</button></div>
+    <div class="mbody">
+      <div style="display:flex;flex-direction:column;gap:13px">
+        <div class="fg"><label>Full Name *</label><input type="text" id="eu-name"></div>
+        <div class="fg"><label>Role *</label><select id="eu-role"><option value="admin">Project Admin</option><option value="sales">Sales</option><option value="superadmin">Super Admin</option></select></div>
+        <div class="fg"><label>New Password (leave blank to keep current)</label><input type="password" id="eu-pass" placeholder="Leave blank to keep current"></div>
+      </div>
     </div>
+    <div class="mfoot"><button class="btn btn-outline" onclick="closeM('editUserModal')">Cancel</button><button class="btn btn-gold" id="eu-save" onclick="saveEditUser()">Save Changes</button></div>
   </div>
 </div>
 
 <!-- Booking Modal -->
-<div class="overlay" id="bkM">
+<div class="overlay" id="bkModal">
   <div class="modal modal-xl">
-    <div class="mhd">
-      <div><div class="mhd-title" id="bk-modal-title">New Booking</div><div class="mhd-sub" id="bk-modal-sub">Add a plot booking</div></div>
-      <button class="mclose" onclick="closeM('bkM')">✕</button>
-    </div>
+    <div class="mhd"><div><div class="mhd-title" id="bkMTitle">New Booking</div><div class="mhd-sub" id="bkMSub">Add a plot booking</div></div><button class="mclose" onclick="closeM('bkModal')">✕</button></div>
     <div class="mbody">
-      <div class="form-2">
-        <div class="f-section">Client Information</div>
-        <div class="fg"><label>Serial No.</label><input type="number" id="bk-serial"></div>
-        <div class="fg"><label>Booking Date</label><input type="date" id="bk-date"></div>
-        <div class="fg full"><label>Full Name *</label><input type="text" id="bk-name" placeholder="Client full name"></div>
-        <div class="fg"><label>Contact Number</label><input type="text" id="bk-contact"></div>
-
-        <div class="f-section">Plot Details</div>
-        <div class="fg"><label>Plot No.</label><input type="text" id="bk-plot"></div>
-        <div class="fg"><label>Plot Size (sqft)</label><input type="number" id="bk-size" oninput="calcBkVals()"></div>
-        <div class="fg"><label>Basic Rate (₹/sqft)</label><input type="number" id="bk-rate" oninput="calcBkVals()"></div>
-        <div class="fg"><label>Infra (₹/sqft)</label><input type="number" id="bk-infra" value="100" oninput="calcBkVals()"></div>
-        <div class="fg"><label>Basic Amount (₹)</label><input type="number" id="bk-basic" readonly></div>
-        <div class="fg"><label>Basic + Infra (₹)</label><input type="number" id="bk-basicinfra" readonly></div>
-        <div class="fg"><label>Agreement Value (₹)</label><input type="number" id="bk-agr" readonly></div>
-        <div class="fg"><label>SDR (₹)</label><input type="number" id="bk-sdr" readonly></div>
-        <div class="fg"><label>SDR- (₹)</label><input type="number" id="bk-sdrminus"></div>
-        <div class="fg"><label>Maintenance (₹)</label><input type="number" id="bk-maint" value="0"></div>
-        <div class="fg"><label>Legal Charges (₹)</label><input type="number" id="bk-legal" value="25000"></div>
-
-        <div class="f-section">Banking &amp; Loan</div>
-        <div class="fg"><label>Bank Name</label>
-          <select id="bk-bank">
-            <option>HDFC</option><option>IDBI</option><option>Axis</option><option>ICICI</option>
-            <option>SBI</option><option>Self</option><option>Tata Capital</option><option>Phase 2</option><option>Other</option>
-          </select>
-        </div>
-        <div class="fg"><label>Banker Contact</label><input type="text" id="bk-bankercont"></div>
-        <div class="fg"><label>Loan Status</label>
-          <select id="bk-status">
-            <option>File Given</option><option>Under Process</option><option>Sanction Received</option>
-            <option>Disbursement Done</option><option>Agreement Completed</option><option>Cancelled</option>
-          </select>
-        </div>
-        <div class="fg"><label>Sanction Received</label>
-          <select id="bk-sancrecv"><option value="">—</option><option>Yes</option><option>No</option></select>
-        </div>
-        <div class="fg"><label>Sanction Date</label><input type="date" id="bk-sancdate"></div>
-        <div class="fg"><label>Sanction Letter</label>
-          <select id="bk-sancletter"><option value="">—</option><option>Received</option><option>Pending</option></select>
-        </div>
-        <div class="fg"><label>SDR Received (₹)</label><input type="number" id="bk-sdrrecv"></div>
-        <div class="fg"><label>SDR Received Date</label><input type="date" id="bk-sdrdate"></div>
-        <div class="fg"><label>Disbursement Status</label>
-          <select id="bk-disbstatus"><option value="">Pending</option><option value="done">Done</option></select>
-        </div>
-        <div class="fg"><label>Disbursement Date</label><input type="date" id="bk-disbdate"></div>
-        <div class="fg full"><label>Doc Submitted for Draft</label><input type="text" id="bk-docsubmit"></div>
-
-        <div class="f-section">Remarks</div>
-        <div class="fg full"><label>Disbursement Remark</label><textarea id="bk-disbremark"></textarea></div>
-        <div class="fg full"><label>General Remark</label><textarea id="bk-remark"></textarea></div>
-
-        <!-- Custom fields injected here -->
-        <div id="bk-custom-fields" class="full" style="display:contents;"></div>
+      <div class="form2">
+        <div class="fsec">Client Information</div>
+        <div class="fg"><label>Serial No.</label><input type="number" id="f-serial"></div>
+        <div class="fg"><label>Booking Date</label><input type="date" id="f-date"></div>
+        <div class="fg full"><label>Full Name *</label><input type="text" id="f-name"></div>
+        <div class="fg"><label>Contact Number</label><input type="text" id="f-contact"></div>
+        <div class="fsec">Plot Details</div>
+        <div class="fg"><label>Plot No.</label><input type="text" id="f-plot"></div>
+        <div class="fg"><label>Plot Size (sqft)</label><input type="number" id="f-size" oninput="calcBk()"></div>
+        <div class="fg"><label>Basic Rate (₹/sqft)</label><input type="number" id="f-rate" oninput="calcBk()"></div>
+        <div class="fg"><label>Infra (₹/sqft)</label><input type="number" id="f-infra" oninput="calcBk()"></div>
+        <div class="fg"><label>Basic Amount (₹)</label><input type="number" id="f-basic" readonly></div>
+        <div class="fg"><label>Basic + Infra (₹)</label><input type="number" id="f-bi" readonly></div>
+        <div class="fg"><label>Agreement Value (₹)</label><input type="number" id="f-agr" readonly></div>
+        <div class="fg"><label>SDR (₹)</label><input type="number" id="f-sdr" readonly></div>
+        <div class="fg"><label>SDR- (₹)</label><input type="number" id="f-sdrminus"></div>
+        <div class="fg"><label>Maintenance (₹)</label><input type="number" id="f-maint"></div>
+        <div class="fg"><label>Legal Charges (₹)</label><input type="number" id="f-legal"></div>
+        <div class="fsec">Banking & Loan</div>
+        <div class="fg"><label>Bank Name</label><select id="f-bank"><option>HDFC</option><option>IDBI</option><option>Axis</option><option>ICICI</option><option>SBI</option><option>Self</option><option>Tata Capital</option><option>Phase 2</option><option>Other</option></select></div>
+        <div class="fg"><label>Banker Contact</label><input type="text" id="f-bankercont"></div>
+        <div class="fg"><label>Loan Status</label><select id="f-status"><option>File Given</option><option>Under Process</option><option>Sanction Received</option><option>Disbursement Done</option><option>Agreement Completed</option><option>Cancelled</option></select></div>
+        <div class="fg"><label>Sanction Received</label><select id="f-sancrecv"><option value="">—</option><option>Yes</option><option>No</option></select></div>
+        <div class="fg"><label>Sanction Date</label><input type="date" id="f-sancdate"></div>
+        <div class="fg"><label>Sanction Letter</label><select id="f-sancletter"><option value="">—</option><option>Received</option><option>Pending</option></select></div>
+        <div class="fg"><label>SDR Received (₹)</label><input type="number" id="f-sdrrecv"></div>
+        <div class="fg"><label>SDR Received Date</label><input type="date" id="f-sdrdate"></div>
+        <div class="fg"><label>Disbursement Status</label><select id="f-disbstatus"><option value="">Pending</option><option value="done">Done</option></select></div>
+        <div class="fg"><label>Disbursement Date</label><input type="date" id="f-disbdate"></div>
+        <div class="fg full"><label>Doc Submitted for Draft</label><input type="text" id="f-doc"></div>
+        <div class="fsec">Remarks</div>
+        <div class="fg full"><label>Disbursement Remark</label><textarea id="f-disbremark"></textarea></div>
+        <div class="fg full"><label>General Remark</label><textarea id="f-remark"></textarea></div>
+        <div id="bk-cf" class="full" style="display:contents"></div>
       </div>
     </div>
-    <div class="mfoot">
-      <button class="btn btn-outline" onclick="closeM('bkM')">Cancel</button>
-      <button class="btn btn-gold" id="bk-savebtn" onclick="saveBk()">💾 Save Booking</button>
-    </div>
+    <div class="mfoot"><button class="btn btn-outline" onclick="closeM('bkModal')">Cancel</button><button class="btn btn-gold" id="bk-save" onclick="saveBk()">💾 Save Booking</button></div>
   </div>
 </div>
 
 <!-- Detail Modal -->
-<div class="overlay" id="detailM">
+<div class="overlay" id="detailModal">
   <div class="modal modal-xl">
-    <div class="mhd">
-      <div><div class="mhd-title" id="detail-title">Booking Detail</div><div class="mhd-sub" id="detail-sub"></div></div>
-      <button class="mclose" onclick="closeM('detailM')">✕</button>
-    </div>
-    <div class="mbody" id="detail-body"></div>
-    <div class="mfoot">
-      <button class="btn btn-outline" onclick="closeM('detailM')">Close</button>
-      <button class="btn btn-gold" id="detail-edit" style="display:none;">✏️ Edit</button>
-    </div>
+    <div class="mhd"><div><div class="mhd-title" id="detailTitle">Booking Detail</div><div class="mhd-sub" id="detailSub"></div></div><button class="mclose" onclick="closeM('detailModal')">✕</button></div>
+    <div class="mbody" id="detailBody"></div>
+    <div class="mfoot"><button class="btn btn-outline" onclick="closeM('detailModal')">Close</button><button class="btn btn-gold" id="detailEdit" style="display:none">✏️ Edit</button></div>
   </div>
 </div>
 
 <!-- Cheque Modal -->
-<div class="overlay" id="chqM">
+<div class="overlay" id="chqModal">
   <div class="modal">
-    <div class="mhd">
-      <div><div class="mhd-title" id="chq-modal-title">Add Payment Entry</div></div>
-      <button class="mclose" onclick="closeM('chqM')">✕</button>
-    </div>
+    <div class="mhd"><div><div class="mhd-title" id="chqMTitle">Add Payment Entry</div></div><button class="mclose" onclick="closeM('chqModal')">✕</button></div>
     <div class="mbody">
-      <div class="form-2">
-        <div class="fg full"><label>Customer Name *</label><input type="text" id="chq-cname"></div>
-        <div class="fg"><label>Plot No.</label><input type="text" id="chq-plot"></div>
-        <div class="fg"><label>Bank Detail</label><input type="text" id="chq-bank"></div>
-        <div class="fg"><label>Cheque / Ref No.</label><input type="text" id="chq-no"></div>
-        <div class="fg"><label>Date</label><input type="date" id="chq-date"></div>
-        <div class="fg"><label>Amount (₹) *</label><input type="number" id="chq-amount"></div>
-        <div class="fg full"><label>Type</label>
-          <select id="chq-type">
-            <option>RPM</option><option>SM</option><option>NILL</option><option>cash</option><option>BOUNCE</option><option>Other</option>
-          </select>
-        </div>
-        <!-- Custom cheque fields injected here -->
-        <div id="chq-custom-fields" class="full" style="display:contents;"></div>
+      <div class="form2">
+        <div class="fg full"><label>Customer Name *</label><input type="text" id="c-name"></div>
+        <div class="fg"><label>Plot No.</label><input type="text" id="c-plot"></div>
+        <div class="fg"><label>Bank Detail</label><input type="text" id="c-bank"></div>
+        <div class="fg"><label>Cheque / Ref No.</label><input type="text" id="c-no"></div>
+        <div class="fg"><label>Date</label><input type="date" id="c-date"></div>
+        <div class="fg"><label>Amount (₹) *</label><input type="number" id="c-amount"></div>
+        <div class="fg full"><label>Type</label><select id="c-type"><option>RPM</option><option>SM</option><option>NILL</option><option>cash</option><option>BOUNCE</option><option>Other</option></select></div>
+        <div id="chq-cf" class="full" style="display:contents"></div>
       </div>
     </div>
-    <div class="mfoot">
-      <button class="btn btn-outline" onclick="closeM('chqM')">Cancel</button>
-      <button class="btn btn-gold" id="chq-savebtn" onclick="saveChq()">💾 Save Entry</button>
-    </div>
+    <div class="mfoot"><button class="btn btn-outline" onclick="closeM('chqModal')">Cancel</button><button class="btn btn-gold" id="chq-save" onclick="saveChq()">💾 Save Entry</button></div>
   </div>
 </div>
 
-<!-- Previous Booking Modal -->
-<div class="overlay" id="prevM">
+<!-- Prev Modal -->
+<div class="overlay" id="prevModal">
   <div class="modal modal-sm">
-    <div class="mhd">
-      <div><div class="mhd-title">Add Previous Booking</div></div>
-      <button class="mclose" onclick="closeM('prevM')">✕</button>
-    </div>
+    <div class="mhd"><div><div class="mhd-title">Add Previous Booking</div></div><button class="mclose" onclick="closeM('prevModal')">✕</button></div>
     <div class="mbody">
-      <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="display:flex;flex-direction:column;gap:13px">
         <div class="fg"><label>Customer Name *</label><input type="text" id="pv-name"></div>
-        <div class="fg"><label>Plot Number</label><input type="text" id="pv-plot"></div>
+        <div class="fg"><label>Plot No.</label><input type="text" id="pv-plot"></div>
         <div class="fg"><label>Plot Size (sqft)</label><input type="number" id="pv-size"></div>
         <div class="fg"><label>Agreement Value (₹)</label><input type="number" id="pv-val"></div>
         <div class="fg"><label>Notes</label><textarea id="pv-notes" rows="2"></textarea></div>
       </div>
     </div>
-    <div class="mfoot">
-      <button class="btn btn-outline" onclick="closeM('prevM')">Cancel</button>
-      <button class="btn btn-gold" onclick="savePrev()">Save</button>
-    </div>
+    <div class="mfoot"><button class="btn btn-outline" onclick="closeM('prevModal')">Cancel</button><button class="btn btn-gold" onclick="savePrev()">Save</button></div>
   </div>
 </div>
 
 <!-- Custom Field Modal -->
-<div class="overlay" id="cfM">
+<div class="overlay" id="cfModal">
   <div class="modal modal-sm">
-    <div class="mhd">
-      <div><div class="mhd-title">Add Custom Field</div><div class="mhd-sub">Extends booking or cheque forms for this project</div></div>
-      <button class="mclose" onclick="closeM('cfM')">✕</button>
-    </div>
+    <div class="mhd"><div><div class="mhd-title">Add Custom Field</div><div class="mhd-sub">Extends booking or cheque forms for this project</div></div><button class="mclose" onclick="closeM('cfModal')">✕</button></div>
     <div class="mbody">
-      <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="display:flex;flex-direction:column;gap:13px">
         <div class="fg"><label>Display Label *</label><input type="text" id="cf-label" placeholder="e.g. Reference Name"></div>
-        <div class="fg"><label>Field Key (auto-generated if blank)</label><input type="text" id="cf-name" placeholder="e.g. ref_name"></div>
-        <div class="fg"><label>Field Type *</label>
-          <select id="cf-type" onchange="onCFTypeChange()">
-            <option value="text">Text</option>
-            <option value="number">Number</option>
-            <option value="date">Date</option>
-            <option value="select">Dropdown (Select)</option>
-            <option value="textarea">Text Area</option>
-            <option value="boolean">Yes / No</option>
-          </select>
-        </div>
-        <div class="fg" id="cf-options-grp" style="display:none;">
-          <label>Options (comma-separated)</label>
-          <input type="text" id="cf-options" placeholder="Option A, Option B, Option C">
-        </div>
-        <div class="fg"><label>Applies To</label>
-          <select id="cf-applies">
-            <option value="booking">Booking</option>
-            <option value="cheque">Cheque / Payment</option>
-          </select>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;">
-          <input type="checkbox" id="cf-required" style="width:auto;margin:0;">
-          <label for="cf-required" style="text-transform:none;letter-spacing:0;font-size:13px;font-weight:400;color:var(--ink);">Required field</label>
-        </div>
+        <div class="fg"><label>Field Key (auto if blank)</label><input type="text" id="cf-key" placeholder="e.g. ref_name"></div>
+        <div class="fg"><label>Field Type *</label><select id="cf-type" onchange="el('cf-opts-g').style.display=this.value==='select'?'':'none'"><option value="text">Text</option><option value="number">Number</option><option value="date">Date</option><option value="select">Dropdown</option><option value="textarea">Text Area</option><option value="boolean">Yes / No</option></select></div>
+        <div class="fg" id="cf-opts-g" style="display:none"><label>Options (comma-separated)</label><input type="text" id="cf-opts" placeholder="Option A, Option B, Option C"></div>
+        <div class="fg"><label>Applies To</label><select id="cf-applies"><option value="booking">Booking</option><option value="cheque">Cheque / Payment</option></select></div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="cf-req" style="width:auto;margin:0"> Required field</label>
       </div>
     </div>
-    <div class="mfoot">
-      <button class="btn btn-outline" onclick="closeM('cfM')">Cancel</button>
-      <button class="btn btn-gold" onclick="addCustomField()">Add Field</button>
-    </div>
+    <div class="mfoot"><button class="btn btn-outline" onclick="closeM('cfModal')">Cancel</button><button class="btn btn-gold" onclick="saveCF()">Add Field</button></div>
   </div>
 </div>
 
-<!-- Project Switcher Modal -->
-<div class="overlay" id="switcherM">
+<!-- Switcher Modal -->
+<div class="overlay" id="switcherModal">
   <div class="modal modal-sm">
-    <div class="mhd">
-      <div><div class="mhd-title">Switch Project</div></div>
-      <button class="mclose" onclick="closeM('switcherM')">✕</button>
-    </div>
-    <div class="mbody" id="switcherList" style="padding:0;"></div>
+    <div class="mhd"><div><div class="mhd-title">Switch Project</div></div><button class="mclose" onclick="closeM('switcherModal')">✕</button></div>
+    <div class="mbody" id="switcherList" style="padding:0"></div>
   </div>
 </div>
 
-<!-- Assign User to Project Modal -->
-<div class="overlay" id="assignM">
-  <div class="modal modal-sm">
-    <div class="mhd">
-      <div>
-        <div class="mhd-title">Assign to Project</div>
-        <div class="mhd-sub">Assigning: <strong id="assign-user-name"></strong></div>
-      </div>
-      <button class="mclose" onclick="closeM('assignM')">✕</button>
-    </div>
-    <div class="mbody">
-      <div style="display:flex;flex-direction:column;gap:14px;">
-        <div class="fg">
-          <label>Project *</label>
-          <select id="assign-proj-sel"></select>
-        </div>
-        <div class="fg">
-          <label>Role *</label>
-          <select id="assign-role-sel">
-            <option value="admin">Project Admin</option>
-            <option value="sales">Sales</option>
-          </select>
-        </div>
-      </div>
-    </div>
-    <div class="mfoot">
-      <button class="btn btn-outline" onclick="closeM('assignM')">Cancel</button>
-      <button class="btn btn-gold" id="assign-save-btn" onclick="saveAssignment()">Assign →</button>
-    </div>
-  </div>
-</div>
-
-<!-- Toast -->
 <div id="toast"></div>
 
-<!-- Manual User Creation Instructions Modal -->
-<div class="overlay" id="manualUserM">
-  <div class="modal modal-lg">
-    <div class="mhd">
-      <div>
-        <div class="mhd-title">Complete User Setup</div>
-        <div class="mhd-sub">Supabase requires users to be created from the dashboard. Follow these 3 steps:</div>
-      </div>
-      <button class="mclose" onclick="closeM('manualUserM')">✕</button>
-    </div>
-    <div class="mbody">
-      <!-- Step 1 -->
-      <div style="display:flex;gap:14px;margin-bottom:20px;align-items:flex-start;">
-        <div style="width:32px;height:32px;border-radius:50%;background:var(--gold);color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0;">1</div>
-        <div>
-          <div style="font-weight:600;font-size:14px;margin-bottom:6px;">Create user in Supabase Dashboard</div>
-          <div style="font-size:13px;color:var(--ink-light);margin-bottom:8px;">Go to <strong>Supabase → Authentication → Users → Add user → Create new user</strong></div>
-          <div style="background:var(--paper);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:13px;">
-            <div style="margin-bottom:4px;"><strong>Email:</strong> <span id="manual-create-email" style="font-family:monospace;color:var(--gold);"></span></div>
-            <div><strong>Password:</strong> <span id="manual-create-pass" style="font-family:monospace;color:var(--gold);"></span></div>
-          </div>
-          <div style="margin-top:8px;font-size:12px;color:var(--ink-faint);">✅ Make sure to check <strong>"Auto Confirm User"</strong></div>
-        </div>
-      </div>
-
-      <!-- Step 2 -->
-      <div style="display:flex;gap:14px;margin-bottom:20px;align-items:flex-start;">
-        <div style="width:32px;height:32px;border-radius:50%;background:var(--gold);color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0;">2</div>
-        <div style="flex:1;">
-          <div style="font-weight:600;font-size:14px;margin-bottom:6px;">Run this SQL in Supabase → SQL Editor</div>
-          <div style="position:relative;">
-            <pre id="manual-create-sql" style="background:var(--ink);color:#e8e8e8;padding:14px;border-radius:8px;font-size:12px;overflow-x:auto;line-height:1.6;white-space:pre-wrap;"></pre>
-            <button class="btn btn-gold btn-sm" style="position:absolute;top:8px;right:8px;" onclick="copySQL()">Copy SQL</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Step 3 -->
-      <div style="display:flex;gap:14px;align-items:flex-start;">
-        <div style="width:32px;height:32px;border-radius:50%;background:var(--gold);color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0;">3</div>
-        <div>
-          <div style="font-weight:600;font-size:14px;margin-bottom:6px;">Done! The user can now log in</div>
-          <div style="font-size:13px;color:var(--ink-light);">Share the email and password with the user. They can log in at <strong>your GitHub Pages URL</strong>.</div>
-        </div>
-      </div>
-    </div>
-    <div class="mfoot">
-      <button class="btn btn-outline" onclick="closeM('manualUserM')">Close</button>
-      <button class="btn btn-gold" onclick="window.open('https://supabase.com/dashboard','_blank')">Open Supabase Dashboard →</button>
-    </div>
-  </div>
-</div>
-
-<!-- Libraries -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

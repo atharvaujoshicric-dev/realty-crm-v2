@@ -1387,34 +1387,60 @@ const COL_DEFS = {
 };
 
 function autoMapCols(headers, type) {
-  const defs = COL_DEFS[type] || [];
   const cols = {};
+  // Normalize: lowercase, strip whitespace/newlines/special chars
+  const norm = h => String(h||'').toLowerCase().replace(/[\n\r]/g,' ').replace(/\s+/g,' ').trim();
+
   headers.forEach((h, idx) => {
-    if (!h) return;
-    const hl = h.toLowerCase().replace(/[^a-z0-9]/g,'');
-    defs.forEach(([key]) => {
-      if (cols[key] !== undefined) return;
-      const kl = key.replace(/_/g,'');
-      // Exact or contains match
-      if (hl === kl || hl.includes(kl) || kl.includes(hl)) cols[key] = idx;
-    });
-  });
-  // Extra fuzzy passes for common Excel headers
-  headers.forEach((h,i) => {
-    const hl = h.toLowerCase();
-    if (cols['client_name'] === undefined && (hl.includes('name') && !hl.includes('bank'))) cols['client_name'] = i;
-    if (cols['cust_name']   === undefined && (hl.includes('name') || hl.includes('cust'))) cols['cust_name'] = i;
-    if (cols['plot_no']     === undefined && hl.includes('plot') && !hl.includes('size') && !hl.includes('area')) cols['plot_no'] = i;
-    if (cols['plot_size']   === undefined && (hl.includes('size') || hl.includes('sqft') || hl.includes('area'))) cols['plot_size'] = i;
-    if (cols['agreement_value'] === undefined && (hl.includes('agr') || (hl.includes('value') && !hl.includes('basic')))) cols['agreement_value'] = i;
-    if (cols['basic_rate']  === undefined && (hl.includes('rate') || hl.includes('basic rate'))) cols['basic_rate'] = i;
-    if (cols['bank_name']   === undefined && hl.includes('bank') && !hl.includes('banker') && !hl.includes('detail')) cols['bank_name'] = i;
-    if (cols['loan_status'] === undefined && (hl.includes('status') || hl.includes('loan status'))) cols['loan_status'] = i;
-    if (cols['contact']     === undefined && (hl.includes('contact') || hl.includes('mobile') || hl.includes('phone'))) cols['contact'] = i;
-    if (cols['amount']      === undefined && hl.includes('amount')) cols['amount'] = i;
-    if (cols['remark']      === undefined && hl.includes('remark')) cols['remark'] = i;
-    if (cols['cheque_no']   === undefined && (hl.includes('chq') || hl.includes('cheque') || hl.includes('ref'))) cols['cheque_no'] = i;
-    if (cols['booking_date']=== undefined && hl.includes('date') && !hl.includes('sanc') && !hl.includes('disb') && !hl.includes('sdr')) cols['booking_date'] = i;
+    const hn = norm(h);
+    if (!hn) return;
+
+    if (type === 'bookings') {
+      if (cols.serial_no    === undefined && /^no$|^serial|^sr\.?\s*no/.test(hn)) cols.serial_no = idx;
+      if (cols.booking_date === undefined && /^date$/.test(hn)) cols.booking_date = idx;
+      if (cols.client_name  === undefined && /^name$|client name|customer name/.test(hn)) cols.client_name = idx;
+      if (cols.contact      === undefined && /contact|mobile|phone/.test(hn)) cols.contact = idx;
+      if (cols.plot_no      === undefined && /plot no|plot number/.test(hn) && !/size|area/.test(hn)) cols.plot_no = idx;
+      if (cols.plot_size    === undefined && /plot size|area|sq\.?ft/.test(hn)) cols.plot_size = idx;
+      if (cols.basic_rate   === undefined && /basic rate|rate/.test(hn) && !/basic amount/.test(hn)) cols.basic_rate = idx;
+      if (cols.infra        === undefined && /^infra$/.test(hn)) cols.infra = idx;
+      if (cols.agreement_value === undefined && /agreement value/.test(hn)) cols.agreement_value = idx;
+      if (cols.sdr          === undefined && /^sdr$/.test(hn)) cols.sdr = idx;
+      if (cols.sdr_minus    === undefined && /^sdr-$|sdr minus/.test(hn)) cols.sdr_minus = idx;
+      if (cols.maintenance  === undefined && /maintenance/.test(hn)) cols.maintenance = idx;
+      if (cols.legal_charges=== undefined && /legal/.test(hn)) cols.legal_charges = idx;
+      if (cols.bank_name    === undefined && /^bank\s*[\(
+]|bank name/.test(hn)) cols.bank_name = idx;
+      if (cols.banker_contact === undefined && /banker contact/.test(hn)) cols.banker_contact = idx;
+      if (cols.loan_status  === undefined && /agreement status|loan status|financing option/.test(hn)) cols.loan_status = idx;
+      if (cols.sanction_received === undefined && /sanction received/.test(hn) && !/date|amount/.test(hn)) cols.sanction_received = idx;
+      if (cols.sanction_date === undefined && /sanction received on date|sanction date/.test(hn)) cols.sanction_date = idx;
+      if (cols.sanction_letter === undefined && /sanction letter/.test(hn)) cols.sanction_letter = idx;
+      if (cols.sdr_received  === undefined && /sdr received$|^sdr received\s*$/.test(hn)) cols.sdr_received = idx;
+      if (cols.sdr_received_date === undefined && /sdr received date/.test(hn)) cols.sdr_received_date = idx;
+      if (cols.disbursement_status === undefined && /disbursement status/.test(hn)) cols.disbursement_status = idx;
+      if (cols.disbursement_date   === undefined && /disbursement done on date|disbursement date/.test(hn)) cols.disbursement_date = idx;
+      if (cols.disbursement_remark === undefined && /disbursement remark|banker remark/.test(hn)) cols.disbursement_remark = idx;
+      if (cols.remark        === undefined && /^remark$/.test(hn)) cols.remark = idx;
+      if (cols.doc_submitted === undefined && /document submitted|doc submitted/.test(hn)) cols.doc_submitted = idx;
+    }
+
+    if (type === 'cheques') {
+      if (cols.cust_name   === undefined && /cust name|customer|client name|name/.test(hn)) cols.cust_name = idx;
+      if (cols.plot_no     === undefined && /plot no|plot number/.test(hn)) cols.plot_no = idx;
+      if (cols.bank_detail === undefined && /bank detail|bank/.test(hn)) cols.bank_detail = idx;
+      if (cols.cheque_no   === undefined && /chq no|cheque no|ref no|chq num/.test(hn)) cols.cheque_no = idx;
+      if (cols.cheque_date === undefined && /chq date|cheque date|date/.test(hn)) cols.cheque_date = idx;
+      if (cols.amount      === undefined && /amount/.test(hn)) cols.amount = idx;
+      if (cols.entry_type  === undefined && /remark|type/.test(hn)) cols.entry_type = idx;
+    }
+
+    if (type === 'prev') {
+      if (cols.client_name     === undefined && /customer name|client name|name/.test(hn)) cols.client_name = idx;
+      if (cols.plot_no         === undefined && /plot number|plot no/.test(hn)) cols.plot_no = idx;
+      if (cols.plot_size       === undefined && /plot size|size/.test(hn)) cols.plot_size = idx;
+      if (cols.agreement_value === undefined && /agreement value|value/.test(hn)) cols.agreement_value = idx;
+    }
   });
   return cols;
 }
@@ -1526,6 +1552,18 @@ function buildInsertRow(row, type, projId) {
   if (type === 'bookings') {
     const name = row.client_name || '';
     if (!name) return null;
+    // Disbursement status col often contains banker remarks — extract actual status
+    const disbRaw = String(row.disbursement_status||'');
+    const disbStatus = normDisb(disbRaw);
+    // If not "done", treat the whole value as a remark
+    const disbRemark = disbStatus !== 'done' && disbRaw ? disbRaw : (row.disbursement_remark||'');
+    // Sanction received — trim whitespace
+    const sancRecv = String(row.sanction_received||'').trim() || null;
+    // Capitalize bank name
+    const bankRaw = String(row.bank_name||'').trim();
+    const bankName = bankRaw ? bankRaw.charAt(0).toUpperCase() + bankRaw.slice(1).toLowerCase() 
+                               .replace('hdfc','HDFC').replace('idbi','IDBI').replace('axis','Axis')
+                               .replace('icici','ICICI').replace('sbi','SBI') : '';
     return { ...base,
       serial_no: toInt(row.serial_no), booking_date: toDate(row.booking_date),
       client_name: name, contact: row.contact||'',
@@ -1534,13 +1572,17 @@ function buildInsertRow(row, type, projId) {
       agreement_value: toNum(row.agreement_value), sdr: toNum(row.sdr),
       sdr_minus: toNum(row.sdr_minus)||0, maintenance: toNum(row.maintenance)||0,
       legal_charges: toNum(row.legal_charges)||25000,
-      bank_name: row.bank_name||'', banker_contact: row.banker_contact||'',
+      bank_name: bankRaw, banker_contact: row.banker_contact||'',
       loan_status: normLoanStatus(row.loan_status),
-      sanction_received: row.sanction_received||null,
+      sanction_received: sancRecv && sancRecv.toLowerCase().startsWith('y') ? 'Yes' : null,
       sanction_date: toDate(row.sanction_date),
-      disbursement_status: normDisb(row.disbursement_status),
+      sanction_letter: row.sanction_letter||null,
+      sdr_received: toNum(row.sdr_received),
+      sdr_received_date: toDate(row.sdr_received_date),
+      disbursement_status: disbStatus,
       disbursement_date: toDate(row.disbursement_date),
-      disbursement_remark: row.disbursement_remark||'',
+      disbursement_remark: disbRemark,
+      doc_submitted: row.doc_submitted||'',
       remark: row.remark||'',
     };
   } else if (type === 'cheques') {
@@ -1578,15 +1620,26 @@ function toDate(v) {
 }
 function normLoanStatus(v) {
   if (!v) return 'File Given';
-  const vl=String(v).toLowerCase();
-  if (vl.includes('agreement')||vl.includes('completed')) return 'Agreement Completed';
-  if (vl.includes('disburs')) return 'Disbursement Done';
-  if (vl.includes('sanction')) return 'Sanction Received';
+  const vl = String(v).toLowerCase().trim();
+  if (vl === 'done' || vl.includes('agreement completed') || vl.includes('agr completed')) return 'Agreement Completed';
+  if (vl.includes('disburs') && vl.includes('done')) return 'Disbursement Done';
+  if (vl.includes('sanction received') || vl.includes('sanction reciv')) return 'Sanction Received';
   if (vl.includes('cancel')) return 'Cancelled';
-  if (vl.includes('process')||vl.includes('under')) return 'Under Process';
+  if (vl.includes('phase 2')) return 'Under Process';
+  if (vl.includes('process') || vl.includes('under process')) return 'Under Process';
+  if (vl.includes('file submitted') || vl.includes('file given') || vl.includes('file subm')) return 'File Given';
+  // Has bank name + submitted = File Given
+  if (vl.includes('bank') && (vl.includes('submit') || vl.includes('file'))) return 'File Given';
+  if (vl.includes('hdfc') || vl.includes('axis') || vl.includes('idbi') || vl.includes('icici') || vl.includes('sbi')) return 'File Given';
   return 'File Given';
 }
-function normDisb(v) { if (!v) return null; const vl=String(v).toLowerCase(); return (vl==='done'||vl==='yes'||vl==='1'||vl==='completed')?'done':null; }
+function normDisb(v) {
+  if (!v) return null;
+  const vl = String(v).toLowerCase().trim();
+  // Only exactly "done" means disbursed - everything else is a remark
+  if (vl === 'done') return 'done';
+  return null;
+}
 function normEntryType(v) {
   if (!v) return 'RPM';
   const vl=String(v).toUpperCase().trim();

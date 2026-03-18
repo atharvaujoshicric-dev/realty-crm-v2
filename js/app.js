@@ -80,10 +80,12 @@ async function boot(authUser) {
 
     if (error || !prof) {
       console.error('Profile error:', error);
+      // Auto-fix: if user has no profile, show clear message and sign them out
       showLoader(false);
+      await sb.auth.signOut();
       el('loginScreen').style.display = 'flex';
       el('app').classList.remove('on');
-      showErr('Profile not found. Contact admin to set up your account.');
+      showErr('Account setup incomplete. Ask your admin to run the profile setup SQL for your account, then try again.');
       return;
     }
 
@@ -232,8 +234,21 @@ function updateProjHeader() {
   const p = S.curProj; if (!p) return;
   el('ps-name').textContent  = p.name;
   el('ps-role').textContent  = S.profile?.role || '';
-  el('dash-title').textContent = p.name;
+  el('dash-title').textContent = p.name + (p.project_code ? ' — ' + p.project_code : '');
   el('dash-sub').textContent   = `${p.location||''} · ${S.bookings.length} bookings`;
+  // Show back button for superadmin viewing a project
+  const backBtn = el('sa-back-btn');
+  if (backBtn) backBtn.style.display = S.profile?.role === 'superadmin' ? '' : 'none';
+}
+
+function backToProjects() {
+  S.curProj = null;
+  S.bookings = []; S.cheques = []; S.prev = [];
+  buildNav('superadmin');
+  el('projSwitcher').style.display = 'none';
+  el('sa-back-btn').style.display = 'none';
+  goPage('p-sa-projects');
+  renderSAProjects();
 }
 
 async function openSwitcher() {
@@ -277,8 +292,12 @@ async function renderSAProjects() {
         <div style="position:absolute;top:9px;right:11px;z-index:2;"><span class="badge b-gold">${bk} bookings</span></div>
       </div>
       <div class="proj-body">
-        <div class="proj-name">${p.name}</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+          <div class="proj-name" style="margin:0;">${p.name}</div>
+          ${p.project_code ? `<span style="font-size:10px;font-weight:700;background:var(--gold-lt);color:var(--gold);border:1px solid var(--gold-border);border-radius:4px;padding:2px 7px;letter-spacing:1px;">${p.project_code}</span>` : ''}
+        </div>
         <div class="proj-loc">📍 ${p.location||'—'}</div>
+        ${p.project_code ? `<div style="display:inline-block;background:var(--gold-lt);border:1px solid var(--gold-border);border-radius:5px;padding:2px 8px;font-size:11px;font-weight:700;color:var(--gold);letter-spacing:1px;margin-bottom:8px;">${p.project_code}</div>` : ''}
         <div class="proj-stats">
           <div class="pst"><div class="v">${bk}</div><div class="l">Bookings</div></div>
           <div class="pst"><div class="v">${p.total_plots||'—'}</div><div class="l">Plots</div></div>
@@ -328,8 +347,10 @@ async function viewProjAsAdmin(pid) {
   if (!p) return;
   S.curProj = p;
   buildNav('admin');
-  el('projSwitcher').style.display = 'flex';
-  await loadProjData(); updateProjHeader(); renderDash(); goPage('p-dash');
+  el('projSwitcher').style.display = 'none';
+  el('sa-back-btn').style.display = '';
+  goPage('p-dash');
+  await loadProjData(); updateProjHeader(); renderDash();
   toast(`Viewing: ${p.name}`, 'inf');
 }
 
@@ -388,6 +409,8 @@ async function saveProj() {
   setBtn('pm-savebtn', true);
 
   if (S.editProjId) {
+    const code = v('pm-code').trim().toUpperCase();
+    if (code) data.project_code = code;
     const { error } = await sb.from('projects').update(data).eq('id', S.editProjId);
     setBtn('pm-savebtn', false);
     if (error) { toast(error.message,'err'); return; }
@@ -397,7 +420,10 @@ async function saveProj() {
     return;
   }
 
-  // Create project first
+  // Generate short unique project code
+  const codeBase = (data.name || 'PROJ').toUpperCase().replace(/[^A-Z0-9]/g,'').substring(0,4).padEnd(4,'X');
+  const codeSuffix = Math.random().toString(36).substring(2,6).toUpperCase();
+  data.project_code = codeBase + '-' + codeSuffix;
   data.swatch = ((await sb.from('projects').select('id')).data?.length||0) % 5;
   const { data:proj, error:pe } = await sb.from('projects').insert(data).select().single();
   if (pe) { setBtn('pm-savebtn',false); toast(pe.message,'err'); return; }
@@ -1600,8 +1626,8 @@ function buildInsertRow(row, type, projId) {
     if (!name) return null;
     // Disbursement status col often contains banker remarks — extract actual status
     const disbRaw = String(row.disbursement_status||'').trim();
-    // Also check loan_status col — in SOTR sheet col 18 has "done" for completed disbursements
-    const loanStatusRaw = String(row.loan_status||'').trim().toLowerCase();
+    // Also check loan_status col — in SOTR sheet col 18 (Agreement Status) has "done" for completed disbursements
+    const loanStatusRaw = String(row.loan_status||'').toLowerCase().replace(/[^a-z]/g,'');
     const disbStatus = normDisb(disbRaw) || (loanStatusRaw === 'done' ? 'done' : null);
     // If disbursed, use disbursement date; put banker remark in remark field
     const disbRemark = disbStatus !== 'done' && disbRaw ? disbRaw : (row.disbursement_remark||'');
@@ -1682,9 +1708,9 @@ function normLoanStatus(v) {
   return 'File Given';
 }
 function normDisb(v) {
-  if (!v) return null;
-  const vl = String(v).toLowerCase().trim().replace(/\s+/g,' ');
-  // "done" exactly = disbursed
+  if (!v && v !== 0) return null;
+  // Strip ALL whitespace, newlines, special chars and check for "done"
+  const vl = String(v).toLowerCase().replace(/[^a-z]/g, '');
   if (vl === 'done') return 'done';
   return null;
 }

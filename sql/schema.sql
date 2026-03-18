@@ -11,6 +11,7 @@ create extension if not exists pgcrypto;
 -- ──────────────────────────────────────────────────────────────
 create table public.projects (
   id            uuid primary key default uuid_generate_v4(),
+  project_code  text unique,
   name          text not null,
   location      text,
   developer     text,

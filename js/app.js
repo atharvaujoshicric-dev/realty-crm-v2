@@ -1599,9 +1599,11 @@ function buildInsertRow(row, type, projId) {
     const name = row.client_name || '';
     if (!name) return null;
     // Disbursement status col often contains banker remarks — extract actual status
-    const disbRaw = String(row.disbursement_status||'');
-    const disbStatus = normDisb(disbRaw);
-    // If not "done", treat the whole value as a remark
+    const disbRaw = String(row.disbursement_status||'').trim();
+    // Also check loan_status col — in SOTR sheet col 18 has "done" for completed disbursements
+    const loanStatusRaw = String(row.loan_status||'').trim().toLowerCase();
+    const disbStatus = normDisb(disbRaw) || (loanStatusRaw === 'done' ? 'done' : null);
+    // If disbursed, use disbursement date; put banker remark in remark field
     const disbRemark = disbStatus !== 'done' && disbRaw ? disbRaw : (row.disbursement_remark||'');
     // Sanction received — trim whitespace
     const sancRecv = String(row.sanction_received||'').trim() || null;
@@ -1667,22 +1669,22 @@ function toDate(v) {
 function normLoanStatus(v) {
   if (!v) return 'File Given';
   const vl = String(v).toLowerCase().trim();
-  if (vl === 'done' || vl.includes('agreement completed') || vl.includes('agr completed')) return 'Agreement Completed';
+  if (vl === 'done') return 'Agreement Completed'; // col 18 "done" = agreement completed + disbursed
+  if (vl.includes('agreement completed') || vl.includes('agr completed')) return 'Agreement Completed';
   if (vl.includes('disburs') && vl.includes('done')) return 'Disbursement Done';
   if (vl.includes('sanction received') || vl.includes('sanction reciv')) return 'Sanction Received';
   if (vl.includes('cancel')) return 'Cancelled';
   if (vl.includes('phase 2')) return 'Under Process';
   if (vl.includes('process') || vl.includes('under process')) return 'Under Process';
   if (vl.includes('file submitted') || vl.includes('file given') || vl.includes('file subm')) return 'File Given';
-  // Has bank name + submitted = File Given
   if (vl.includes('bank') && (vl.includes('submit') || vl.includes('file'))) return 'File Given';
   if (vl.includes('hdfc') || vl.includes('axis') || vl.includes('idbi') || vl.includes('icici') || vl.includes('sbi')) return 'File Given';
   return 'File Given';
 }
 function normDisb(v) {
   if (!v) return null;
-  const vl = String(v).toLowerCase().trim();
-  // Only exactly "done" means disbursed - everything else is a remark
+  const vl = String(v).toLowerCase().trim().replace(/\s+/g,' ');
+  // "done" exactly = disbursed
   if (vl === 'done') return 'done';
   return null;
 }

@@ -19,6 +19,16 @@
     <div class="loader-dots"><span></span><span></span><span></span></div>
   </div>
 </div>
+<script>
+  // Emergency: if still loading after 6 seconds, force show login
+  window._loaderKill = setTimeout(function() {
+    var l = document.getElementById('globalLoader');
+    var ls = document.getElementById('loginScreen');
+    if (l) { l.style.display = 'none'; }
+    if (ls) { ls.style.display = 'flex'; }
+    console.warn('RealtyFlow: loader timeout — forcing login screen');
+  }, 6000);
+</script>
 
 <!-- ─── LOGIN ─── -->
 <div id="loginScreen" style="display:flex;">

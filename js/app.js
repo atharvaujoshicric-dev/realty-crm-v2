@@ -1171,8 +1171,8 @@ function saveCfg() {
   const url=v('cfg-url').trim(), key=v('cfg-key').trim();
   if(!url || !key){ toast('Both URL and key are required','err'); return; }
   if(!url.startsWith('https://')){ toast('URL must start with https://','err'); return; }
-  localStorage.setItem('rf_url', url);
-  localStorage.setItem('rf_key', key);
+  lsSet('rf_url', url);
+  lsSet('rf_key', key);
   sb = window.supabase.createClient(url, key, { auth:{ persistSession:true, autoRefreshToken:true } });
   closeM('cfgM');
   el('cfgBanner').style.display = 'none';
@@ -1191,7 +1191,9 @@ function num(id){ return parseFloat(v(id))||0; }
 function int(id){ return parseInt(v(id))||0; }
 function setField(id,val){ const e=el(id); if(e) e.value=val??''; }
 function clearFields(ids){ ids.forEach(id=>setField(id,'')); }
-function ls(k){ return localStorage.getItem(k); }
+function ls(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){ console.warn('Storage blocked'); } }
+function lsRemove(k){ try{ localStorage.removeItem(k); }catch(e){} }
 function escH(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function shortName(n){ return n.split(/[\s—–-]/)[0]; }
 function today(){ return new Date().toISOString().slice(0,10); }
@@ -1244,11 +1246,13 @@ function showLoader(on){
     l.classList.remove('hide','gone');
     l.style.display='flex';
   } else {
+    // Clear emergency timeout
+    if(window._loaderKill) { clearTimeout(window._loaderKill); window._loaderKill=null; }
     l.classList.add('hide');
     setTimeout(()=>{
       l.classList.add('gone');
       l.style.display='none';
-    }, 380);
+    }, 350);
   }
 }
 function showErr(msg){ const e=el('loginError'); if(!e) return; e.textContent=msg; e.style.display='block'; }
@@ -1429,58 +1433,59 @@ const COL_DEFS = {
 
 function autoMapCols(headers, type) {
   const cols = {};
-  // Normalize: lowercase, strip whitespace/newlines/special chars
-  const norm = h => String(h||'').toLowerCase().replace(/[\n\r]/g,' ').replace(/\s+/g,' ').trim();
+  const norm = function(h) {
+    return String(h||'').toLowerCase().replace(/[\n\r\t]/g,' ').replace(/\s+/g,' ').trim();
+  };
 
-  headers.forEach((h, idx) => {
-    const hn = norm(h);
+  headers.forEach(function(h, idx) {
+    var hn = norm(h);
     if (!hn) return;
 
     if (type === 'bookings') {
-      if (cols.serial_no    === undefined && /^no$|^serial|^sr\.?\s*no/.test(hn)) cols.serial_no = idx;
-      if (cols.booking_date === undefined && /^date$/.test(hn)) cols.booking_date = idx;
-      if (cols.client_name  === undefined && /^name$|client name|customer name/.test(hn)) cols.client_name = idx;
-      if (cols.contact      === undefined && /contact|mobile|phone/.test(hn)) cols.contact = idx;
-      if (cols.plot_no      === undefined && /plot no|plot number/.test(hn) && !/size|area/.test(hn)) cols.plot_no = idx;
-      if (cols.plot_size    === undefined && /plot size|area|sq\.?ft/.test(hn)) cols.plot_size = idx;
-      if (cols.basic_rate   === undefined && /basic rate|rate/.test(hn) && !/basic amount/.test(hn)) cols.basic_rate = idx;
-      if (cols.infra        === undefined && /^infra$/.test(hn)) cols.infra = idx;
-      if (cols.agreement_value === undefined && /agreement value/.test(hn)) cols.agreement_value = idx;
-      if (cols.sdr          === undefined && /^sdr$/.test(hn)) cols.sdr = idx;
-      if (cols.sdr_minus    === undefined && /^sdr-$|sdr minus/.test(hn)) cols.sdr_minus = idx;
-      if (cols.maintenance  === undefined && /maintenance/.test(hn)) cols.maintenance = idx;
-      if (cols.legal_charges=== undefined && /legal/.test(hn)) cols.legal_charges = idx;
-      if (cols.bank_name    === undefined && /^bank\s*[\(
-]|bank name/.test(hn)) cols.bank_name = idx;
-      if (cols.banker_contact === undefined && /banker contact/.test(hn)) cols.banker_contact = idx;
-      if (cols.loan_status  === undefined && /agreement status|loan status|financing option/.test(hn)) cols.loan_status = idx;
-      if (cols.sanction_received === undefined && /sanction received/.test(hn) && !/date|amount/.test(hn)) cols.sanction_received = idx;
-      if (cols.sanction_date === undefined && /sanction received on date|sanction date/.test(hn)) cols.sanction_date = idx;
-      if (cols.sanction_letter === undefined && /sanction letter/.test(hn)) cols.sanction_letter = idx;
-      if (cols.sdr_received  === undefined && /sdr received$|^sdr received\s*$/.test(hn)) cols.sdr_received = idx;
-      if (cols.sdr_received_date === undefined && /sdr received date/.test(hn)) cols.sdr_received_date = idx;
-      if (cols.disbursement_status === undefined && /disbursement status/.test(hn)) cols.disbursement_status = idx;
-      if (cols.disbursement_date   === undefined && /disbursement done on date|disbursement date/.test(hn)) cols.disbursement_date = idx;
-      if (cols.disbursement_remark === undefined && /disbursement remark|banker remark/.test(hn)) cols.disbursement_remark = idx;
-      if (cols.remark        === undefined && /^remark$/.test(hn)) cols.remark = idx;
-      if (cols.doc_submitted === undefined && /document submitted|doc submitted/.test(hn)) cols.doc_submitted = idx;
+      if (cols.serial_no        === undefined && (hn === 'no' || hn.startsWith('serial') || hn.startsWith('sr'))) cols.serial_no = idx;
+      if (cols.booking_date     === undefined && hn === 'date') cols.booking_date = idx;
+      if (cols.client_name      === undefined && (hn === 'name' || hn.includes('client name') || hn.includes('customer name'))) cols.client_name = idx;
+      if (cols.contact          === undefined && (hn.includes('contact') || hn.includes('mobile') || hn.includes('phone'))) cols.contact = idx;
+      if (cols.plot_no          === undefined && hn.includes('plot') && !hn.includes('size') && !hn.includes('area')) cols.plot_no = idx;
+      if (cols.plot_size        === undefined && (hn.includes('plot size') || hn.includes('sqft') || hn.includes('sq.ft') || hn.includes('area'))) cols.plot_size = idx;
+      if (cols.basic_rate       === undefined && hn.includes('basic rate')) cols.basic_rate = idx;
+      if (cols.basic_rate       === undefined && hn === 'rate') cols.basic_rate = idx;
+      if (cols.infra            === undefined && hn === 'infra') cols.infra = idx;
+      if (cols.agreement_value  === undefined && hn.includes('agreement value')) cols.agreement_value = idx;
+      if (cols.sdr              === undefined && hn === 'sdr') cols.sdr = idx;
+      if (cols.sdr_minus        === undefined && (hn === 'sdr-' || hn === 'sdr minus')) cols.sdr_minus = idx;
+      if (cols.maintenance      === undefined && hn.includes('maintenance')) cols.maintenance = idx;
+      if (cols.legal_charges    === undefined && hn.includes('legal')) cols.legal_charges = idx;
+      if (cols.bank_name        === undefined && (hn.startsWith('bank') || hn.includes('bank name'))) cols.bank_name = idx;
+      if (cols.banker_contact   === undefined && hn.includes('banker contact')) cols.banker_contact = idx;
+      if (cols.loan_status      === undefined && (hn.includes('agreement status') || hn.includes('loan status') || hn.includes('financing option'))) cols.loan_status = idx;
+      if (cols.sanction_received=== undefined && hn.includes('sanction received') && !hn.includes('date') && !hn.includes('amount')) cols.sanction_received = idx;
+      if (cols.sanction_date    === undefined && (hn.includes('sanction received on date') || hn.includes('sanction date'))) cols.sanction_date = idx;
+      if (cols.sanction_letter  === undefined && hn.includes('sanction letter')) cols.sanction_letter = idx;
+      if (cols.sdr_received     === undefined && hn === 'sdr received') cols.sdr_received = idx;
+      if (cols.sdr_received_date=== undefined && hn.includes('sdr received date')) cols.sdr_received_date = idx;
+      if (cols.disbursement_status === undefined && hn.includes('disbursement status')) cols.disbursement_status = idx;
+      if (cols.disbursement_date   === undefined && (hn.includes('disbursement done on date') || hn.includes('disbursement date'))) cols.disbursement_date = idx;
+      if (cols.disbursement_remark === undefined && (hn.includes('disbursement remark') || hn.includes('banker remark'))) cols.disbursement_remark = idx;
+      if (cols.remark           === undefined && hn === 'remark') cols.remark = idx;
+      if (cols.doc_submitted    === undefined && (hn.includes('document submitted') || hn.includes('doc submitted'))) cols.doc_submitted = idx;
     }
 
     if (type === 'cheques') {
-      if (cols.cust_name   === undefined && /cust name|customer|client name|name/.test(hn)) cols.cust_name = idx;
-      if (cols.plot_no     === undefined && /plot no|plot number/.test(hn)) cols.plot_no = idx;
-      if (cols.bank_detail === undefined && /bank detail|bank/.test(hn)) cols.bank_detail = idx;
-      if (cols.cheque_no   === undefined && /chq no|cheque no|ref no|chq num/.test(hn)) cols.cheque_no = idx;
-      if (cols.cheque_date === undefined && /chq date|cheque date|date/.test(hn)) cols.cheque_date = idx;
-      if (cols.amount      === undefined && /amount/.test(hn)) cols.amount = idx;
-      if (cols.entry_type  === undefined && /remark|type/.test(hn)) cols.entry_type = idx;
+      if (cols.cust_name   === undefined && (hn.includes('cust name') || hn.includes('customer') || hn.includes('client') || hn === 'name')) cols.cust_name = idx;
+      if (cols.plot_no     === undefined && hn.includes('plot')) cols.plot_no = idx;
+      if (cols.bank_detail === undefined && (hn.includes('bank detail') || hn.includes('bank'))) cols.bank_detail = idx;
+      if (cols.cheque_no   === undefined && (hn.includes('chq no') || hn.includes('cheque no') || hn.includes('ref no') || hn === 'chq no')) cols.cheque_no = idx;
+      if (cols.cheque_date === undefined && (hn.includes('chq date') || hn.includes('cheque date') || hn === 'date')) cols.cheque_date = idx;
+      if (cols.amount      === undefined && hn.includes('amount')) cols.amount = idx;
+      if (cols.entry_type  === undefined && (hn === 'remark' || hn.includes('type'))) cols.entry_type = idx;
     }
 
     if (type === 'prev') {
-      if (cols.client_name     === undefined && /customer name|client name|name/.test(hn)) cols.client_name = idx;
-      if (cols.plot_no         === undefined && /plot number|plot no/.test(hn)) cols.plot_no = idx;
-      if (cols.plot_size       === undefined && /plot size|size/.test(hn)) cols.plot_size = idx;
-      if (cols.agreement_value === undefined && /agreement value|value/.test(hn)) cols.agreement_value = idx;
+      if (cols.client_name     === undefined && (hn.includes('customer name') || hn.includes('client name') || hn === 'name')) cols.client_name = idx;
+      if (cols.plot_no         === undefined && (hn.includes('plot number') || hn.includes('plot no'))) cols.plot_no = idx;
+      if (cols.plot_size       === undefined && (hn.includes('plot size') || hn.includes('size'))) cols.plot_size = idx;
+      if (cols.agreement_value === undefined && (hn.includes('agreement value') || hn.includes('value'))) cols.agreement_value = idx;
     }
   });
   return cols;

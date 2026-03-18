@@ -369,13 +369,33 @@ async function saveUser() {
   if (!name||!email||!pass) { toast('All fields required','err'); return; }
   if (pass.length<8) { toast('Password min 8 characters','err'); return; }
   setBtn('um-savebtn',true);
-  const { data:uid, error } = await sb.rpc('create_crm_user',{p_email:email,p_password:pass,p_name:name,p_role:role});
-  if (error) { setBtn('um-savebtn',false); toast(error.message,'err'); return; }
-  if (projId) await sb.rpc('assign_to_project',{p_user_id:uid,p_project_id:projId,p_role:role});
+
+  // Use Supabase Auth Admin API via edge function workaround
+  // First sign up the user
+  const { data: signupData, error: signupErr } = await sb.auth.admin
+    ? await sb.auth.admin.createUser({ email, password: pass, email_confirm: true, user_metadata: { full_name: name } })
+    : { data: null, error: { message: 'Admin API not available' } };
+
+  let uid = signupData?.user?.id;
+
+  // Fallback: use our SQL function
+  if (!uid) {
+    const { data: rpcId, error: rpcErr } = await sb.rpc('create_crm_user', {
+      p_email: email, p_password: pass, p_name: name, p_role: role
+    });
+    if (rpcErr) { setBtn('um-savebtn',false); toast(rpcErr.message,'err'); return; }
+    uid = rpcId;
+  } else {
+    // Insert profile manually
+    const { error: profErr } = await sb.from('profiles').insert({ id: uid, full_name: name, role });
+    if (profErr) { setBtn('um-savebtn',false); toast(profErr.message,'err'); return; }
+  }
+
+  if (projId && uid) await sb.rpc('assign_to_project',{p_user_id:uid,p_project_id:projId,p_role:role});
   setBtn('um-savebtn',false);
   closeM('userM');
   if (S.profile?.role==='superadmin') await renderSAUsers(); else renderSettings();
-  toast('User created!');
+  toast('User created! They can now log in.');
 }
 
 async function removeUser(uid) {

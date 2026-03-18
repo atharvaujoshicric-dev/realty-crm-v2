@@ -859,7 +859,6 @@ function openCFModal() {
   openM('cfM');
 }
 
-el_ = function(id){return document.getElementById(id);}; // forward decl hack
 
 async function addCustomField() {
   const label=v('cf-label').trim(), name_raw=v('cf-name').trim();
@@ -1191,415 +1190,380 @@ function hideErr(){ const e=el('loginError'); if(e) e.style.display='none'; }
 //  EXCEL IMPORT
 // ══════════════════════════════════════════════════════════════
 
-let importState = {
-  workbook: null,
-  sheets: [],
-  mappings: {},       // sheetName -> { type: 'bookings'|'cheques'|'prev'|'skip', cols: {} }
-  projectId: null,
-  parsed: {},         // sheetName -> array of row objects
+const IMP = {
+  wb: null, sheets: [], mappings: {}, projectId: null, parsed: {}
 };
 
-function renderImportPage() {
-  // Populate project dropdown
-  const sel = el('import-project-sel');
-  if (sel) {
-    sb.from('projects').select('id,name').order('name').then(({ data }) => {
-      sel.innerHTML = '<option value="">— Select Project —</option>' +
-        (data||[]).map(p => `<option value="${p.id}">${escH(p.name)}</option>`).join('');
-    });
-  }
-  resetImportState();
+function safeId(name) {
+  // Convert sheet name to a safe DOM id
+  return name.replace(/[^a-zA-Z0-9]/g, '_');
 }
 
-function resetImportState() {
-  importState = { workbook:null, sheets:[], mappings:{}, projectId:null, parsed:{} };
-  el('import-step-1').style.display = '';
-  el('import-step-2').style.display = 'none';
-  el('import-step-3').style.display = 'none';
-  el('import-result').style.display = 'none';
-  const fi = el('import-file-input');
-  if (fi) fi.value = '';
+function renderImportPage() {
+  const sel = el('import-project-sel');
+  if (!sel) return;
+  sb.from('projects').select('id,name').order('name').then(({ data }) => {
+    sel.innerHTML = '<option value="">— Select Project —</option>' +
+      (data||[]).map(p => `<option value="${p.id}">${escH(p.name)}</option>`).join('');
+  });
+  resetImport();
 }
+
+function resetImport() {
+  IMP.wb = null; IMP.sheets = []; IMP.mappings = {}; IMP.projectId = null; IMP.parsed = {};
+  show('import-step-1'); hide('import-step-2'); hide('import-step-3'); hide('import-result');
+  const fi = el('import-file-input'); if (fi) fi.value = '';
+  el('import-filename').textContent = '';
+  el('import-parse-btn').disabled = true;
+}
+
+function show(id) { const e = el(id); if (e) e.style.display = ''; }
+function hide(id) { const e = el(id); if (e) e.style.display = 'none'; }
 
 function onImportFileChange(input) {
   const file = input.files[0];
   if (!file) return;
-  el('import-filename').textContent = file.name;
+  el('import-filename').textContent = '📄 ' + file.name;
   el('import-parse-btn').disabled = false;
 }
 
 async function parseImportFile() {
   const file = el('import-file-input').files[0];
   const projId = el('import-project-sel').value;
-  if (!file) { toast('Please select an Excel file','err'); return; }
-  if (!projId) { toast('Please select a project','err'); return; }
+  if (!file) { toast('Please select an Excel file', 'err'); return; }
+  if (!projId) { toast('Please select a project first', 'err'); return; }
+  if (typeof XLSX === 'undefined') { toast('Excel library not loaded. Please refresh the page.', 'err'); return; }
 
-  importState.projectId = projId;
+  IMP.projectId = projId;
   setBtn('import-parse-btn', true);
+  el('import-filename').textContent = '⏳ Reading file…';
 
-  const data = await file.arrayBuffer();
-  const wb = XLSX.read(data, { type:'array', cellDates:true });
-  importState.workbook = wb;
-  importState.sheets = wb.SheetNames;
+  try {
+    const buf = await file.arrayBuffer();
+    IMP.wb = XLSX.read(buf, { type: 'array', cellDates: true, raw: false });
+    IMP.sheets = IMP.wb.SheetNames;
+  } catch(e) {
+    toast('Error reading file: ' + e.message, 'err');
+    setBtn('import-parse-btn', false);
+    return;
+  }
 
-  // Build sheet mapping UI
-  el('import-step-1').style.display = 'none';
-  el('import-step-2').style.display = '';
   setBtn('import-parse-btn', false);
+  el('import-filename').textContent = '✓ ' + file.name;
+  hide('import-step-1');
+  show('import-step-2');
 
   const container = el('sheet-mapping-list');
   container.innerHTML = '';
 
-  wb.SheetNames.forEach(sheetName => {
-    const ws = wb.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
-    const headers = (rows[0] || []).map(h => String(h).trim()).filter(Boolean);
-    const previewRows = rows.slice(1, 4);
+  IMP.sheets.forEach(sheetName => {
+    const sid = safeId(sheetName);
+    const ws = IMP.wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+    const headers = (rows[0] || []).map(h => String(h||'').trim());
+    const dataRows = rows.slice(1).filter(r => r.some(c => c !== ''));
+    const previewRows = dataRows.slice(0, 3);
 
-    // Auto-detect sheet type
-    const lName = sheetName.toLowerCase();
+    // Auto-detect type
+    const nl = sheetName.toLowerCase();
     let autoType = 'skip';
-    if (lName.includes('bw') || lName.includes('book') || lName.includes('sotr') || lName.includes('sheet4')) autoType = 'bookings';
-    else if (lName.includes('cheque') || lName.includes('payment')) autoType = 'cheques';
-    else if (lName.includes('prev') || lName.includes('previous')) autoType = 'prev';
-    else if (headers.some(h => h.toLowerCase().includes('client') || h.toLowerCase().includes('name') || h.toLowerCase().includes('plot'))) autoType = 'bookings';
+    if (nl.includes('bw') || nl.includes('sotr') || nl.includes('sheet4') || nl.includes('booking')) autoType = 'bookings';
+    else if (nl.includes('cheque') || nl.includes('payment')) autoType = 'cheques';
+    else if (nl.includes('prev') || nl.includes('previous')) autoType = 'prev';
+    else if (nl.includes('sheet2') || nl.includes('sheet1')) autoType = 'bookings';
+    else {
+      const hStr = headers.join(' ').toLowerCase();
+      if (hStr.includes('client') || hStr.includes('agreement')) autoType = 'bookings';
+      else if (hStr.includes('cheque') || hStr.includes('chq') || hStr.includes('amount')) autoType = 'cheques';
+    }
 
-    importState.mappings[sheetName] = { type: autoType, cols: {} };
+    IMP.mappings[sheetName] = { type: autoType, cols: autoMapCols(headers, autoType) };
 
-    const div = mk('div');
-    div.style.cssText = 'background:white;border:1px solid var(--border);border-radius:var(--r);margin-bottom:14px;overflow:hidden;';
-    div.innerHTML = `
-      <div style="padding:12px 16px;background:var(--paper);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
-        <div style="font-weight:600;font-size:14px;">📄 ${escH(sheetName)}</div>
-        <div style="font-size:12px;color:var(--ink-faint);">${rows.length-1} rows · ${headers.length} columns</div>
-        <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
-          <label style="font-size:12px;color:var(--ink-light);">Import as:</label>
-          <select id="sheet-type-${CSS.escape(sheetName)}" onchange="onSheetTypeChange('${sheetName.replace(/'/g,"\'")}', this.value)"
-            style="padding:5px 9px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:'Outfit',sans-serif;">
-            <option value="skip" ${autoType==='skip'?'selected':''}>⏭ Skip</option>
-            <option value="bookings" ${autoType==='bookings'?'selected':''}>🏡 Bookings</option>
-            <option value="cheques" ${autoType==='cheques'?'selected':''}>🧾 Cheques</option>
-            <option value="prev" ${autoType==='prev'?'selected':''}>📁 Prev Team</option>
-          </select>
-        </div>
-      </div>
-      <div id="col-map-${CSS.escape(sheetName)}" style="padding:14px 16px;${autoType==='skip'?'display:none;':''}">
-        ${buildColMapping(sheetName, headers, autoType)}
-      </div>
-      <div style="padding:0 16px 12px;overflow-x:auto;">
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--ink-faint);margin-bottom:6px;">Preview (first 3 rows)</div>
-        <table style="font-size:11px;border-collapse:collapse;min-width:100%;">
-          <thead><tr>${headers.slice(0,8).map(h=>`<th style="padding:4px 8px;background:var(--paper);border:1px solid var(--border);white-space:nowrap;">${escH(h)}</th>`).join('')}${headers.length>8?'<th style="padding:4px 8px;background:var(--paper);border:1px solid var(--border);">…</th>':''}</tr></thead>
-          <tbody>${previewRows.map(row=>`<tr>${(row.slice(0,8)||[]).map(c=>`<td style="padding:4px 8px;border:1px solid var(--border);white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis;">${escH(String(c||''))}</td>`).join('')}${headers.length>8?'<td style="padding:4px 8px;border:1px solid var(--border);">…</td>':''}</tr>`).join('')}</tbody>
-        </table>
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'background:white;border:1px solid var(--border);border-radius:12px;margin-bottom:14px;overflow:hidden;';
+
+    // Header row
+    const hdr = document.createElement('div');
+    hdr.style.cssText = 'padding:12px 18px;background:var(--paper);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;flex-wrap:wrap;';
+    hdr.innerHTML = `
+      <span style="font-weight:600;font-size:14px;">📄 ${escH(sheetName)}</span>
+      <span style="font-size:12px;color:var(--ink-faint);">${dataRows.length} rows · ${headers.filter(Boolean).length} cols</span>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+        <label style="font-size:12px;color:var(--ink-light);">Import as:</label>
+        <select id="stype_${sid}" style="padding:5px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:'Outfit',sans-serif;">
+          <option value="skip"  ${autoType==='skip'?'selected':''}>⏭ Skip</option>
+          <option value="bookings" ${autoType==='bookings'?'selected':''}>🏡 Bookings</option>
+          <option value="cheques"  ${autoType==='cheques'?'selected':''}>🧾 Cheques</option>
+          <option value="prev"     ${autoType==='prev'?'selected':''}>📁 Prev Team</option>
+        </select>
       </div>`;
-    container.appendChild(div);
+    wrap.appendChild(hdr);
+
+    // Column mapping area
+    const mapArea = document.createElement('div');
+    mapArea.id = 'maparea_' + sid;
+    mapArea.style.cssText = 'padding:14px 18px;' + (autoType === 'skip' ? 'display:none;' : '');
+    mapArea.innerHTML = buildColMapHTML(sheetName, headers, autoType);
+    wrap.appendChild(mapArea);
+
+    // Preview table
+    if (previewRows.length) {
+      const prev = document.createElement('div');
+      prev.style.cssText = 'padding:0 18px 14px;overflow-x:auto;';
+      const visHeaders = headers.slice(0, 7).filter(Boolean);
+      prev.innerHTML = `
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--ink-faint);margin-bottom:6px;">Preview</div>
+        <table style="font-size:11px;border-collapse:collapse;min-width:100%;">
+          <thead><tr>${visHeaders.map(h=>`<th style="padding:4px 8px;background:var(--paper);border:1px solid var(--border);white-space:nowrap;">${escH(h)}</th>`).join('')}</tr></thead>
+          <tbody>${previewRows.map(row=>`<tr>${visHeaders.map((h,i)=>`<td style="padding:4px 8px;border:1px solid var(--border);white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis;">${escH(String(row[i]||''))}</td>`).join('')}</tr>`).join('')}</tbody>
+        </table>`;
+      wrap.appendChild(prev);
+    }
+
+    container.appendChild(wrap);
+
+    // Attach change listener AFTER element is in DOM
+    el('stype_' + sid).addEventListener('change', function() {
+      IMP.mappings[sheetName].type = this.value;
+      const ma = el('maparea_' + sid);
+      if (this.value === 'skip') { ma.style.display = 'none'; return; }
+      ma.style.display = '';
+      ma.innerHTML = buildColMapHTML(sheetName, headers, this.value);
+    });
   });
 }
 
-// Column mapping definitions
 const COL_DEFS = {
   bookings: [
-    { key:'serial_no',           label:'Serial No.',          required:false },
-    { key:'booking_date',        label:'Booking Date',        required:false },
-    { key:'client_name',         label:'Client Name',         required:true  },
-    { key:'contact',             label:'Contact',             required:false },
-    { key:'plot_no',             label:'Plot No.',            required:false },
-    { key:'plot_size',           label:'Plot Size (sqft)',    required:false },
-    { key:'basic_rate',          label:'Basic Rate',          required:false },
-    { key:'infra',               label:'Infra (₹/sqft)',      required:false },
-    { key:'agreement_value',     label:'Agreement Value',     required:false },
-    { key:'sdr',                 label:'SDR',                 required:false },
-    { key:'sdr_minus',           label:'SDR-',                required:false },
-    { key:'maintenance',         label:'Maintenance',         required:false },
-    { key:'legal_charges',       label:'Legal Charges',       required:false },
-    { key:'bank_name',           label:'Bank Name',           required:false },
-    { key:'banker_contact',      label:'Banker Contact',      required:false },
-    { key:'loan_status',         label:'Loan Status',         required:false },
-    { key:'sanction_received',   label:'Sanction Received',   required:false },
-    { key:'sanction_date',       label:'Sanction Date',       required:false },
-    { key:'disbursement_status', label:'Disbursement Status', required:false },
-    { key:'disbursement_date',   label:'Disbursement Date',   required:false },
-    { key:'disbursement_remark', label:'Disbursement Remark', required:false },
-    { key:'remark',              label:'Remark',              required:false },
+    ['serial_no','Serial No.',false], ['booking_date','Booking Date',false],
+    ['client_name','Client Name',true], ['contact','Contact',false],
+    ['plot_no','Plot No.',false], ['plot_size','Plot Size (sqft)',false],
+    ['basic_rate','Basic Rate',false], ['infra','Infra (₹/sqft)',false],
+    ['agreement_value','Agreement Value',false], ['sdr','SDR',false],
+    ['sdr_minus','SDR-',false], ['maintenance','Maintenance',false],
+    ['legal_charges','Legal Charges',false], ['bank_name','Bank Name',false],
+    ['banker_contact','Banker Contact',false], ['loan_status','Loan Status',false],
+    ['sanction_received','Sanction Received',false], ['sanction_date','Sanction Date',false],
+    ['disbursement_status','Disbursement Status',false], ['disbursement_date','Disbursement Date',false],
+    ['disbursement_remark','Disbursement Remark',false], ['remark','Remark',false],
   ],
   cheques: [
-    { key:'cust_name',   label:'Customer Name', required:true  },
-    { key:'plot_no',     label:'Plot No.',       required:false },
-    { key:'bank_detail', label:'Bank Detail',    required:false },
-    { key:'cheque_no',   label:'Cheque/Ref No.', required:false },
-    { key:'cheque_date', label:'Date',           required:false },
-    { key:'amount',      label:'Amount',         required:true  },
-    { key:'entry_type',  label:'Type (RPM/SM)',  required:false },
+    ['cust_name','Customer Name',true], ['plot_no','Plot No.',false],
+    ['bank_detail','Bank Detail',false], ['cheque_no','Cheque/Ref No.',false],
+    ['cheque_date','Date',false], ['amount','Amount',true], ['entry_type','Type (RPM/SM)',false],
   ],
   prev: [
-    { key:'client_name',     label:'Customer Name',    required:true  },
-    { key:'plot_no',         label:'Plot No.',          required:false },
-    { key:'plot_size',       label:'Plot Size (sqft)',  required:false },
-    { key:'agreement_value', label:'Agreement Value',   required:false },
-    { key:'notes',           label:'Notes',             required:false },
+    ['client_name','Customer Name',true], ['plot_no','Plot No.',false],
+    ['plot_size','Plot Size (sqft)',false], ['agreement_value','Agreement Value',false],
+    ['notes','Notes',false],
   ],
 };
 
-function buildColMapping(sheetName, headers, type) {
-  if (type === 'skip' || !COL_DEFS[type]) return '';
-  const defs = COL_DEFS[type];
-
-  // Auto-map by fuzzy matching header names
-  const autoMap = {};
+function autoMapCols(headers, type) {
+  const defs = COL_DEFS[type] || [];
+  const cols = {};
   headers.forEach((h, idx) => {
+    if (!h) return;
     const hl = h.toLowerCase().replace(/[^a-z0-9]/g,'');
-    defs.forEach(d => {
-      const dk = d.key.replace(/_/g,'');
-      const dl = d.label.toLowerCase().replace(/[^a-z0-9]/g,'');
-      if (!autoMap[d.key] && (hl.includes(dk) || dk.includes(hl) || hl.includes(dl.substring(0,6)))) {
-        autoMap[d.key] = idx;
-      }
+    defs.forEach(([key]) => {
+      if (cols[key] !== undefined) return;
+      const kl = key.replace(/_/g,'');
+      // Exact or contains match
+      if (hl === kl || hl.includes(kl) || kl.includes(hl)) cols[key] = idx;
     });
   });
-  // Extra fuzzy passes
-  headers.forEach((h,idx) => {
+  // Extra fuzzy passes for common Excel headers
+  headers.forEach((h,i) => {
     const hl = h.toLowerCase();
-    if (!autoMap['client_name'] && (hl.includes('name') || hl.includes('client'))) autoMap['client_name'] = idx;
-    if (!autoMap['cust_name']   && (hl.includes('name') || hl.includes('cust')))   autoMap['cust_name']   = idx;
-    if (!autoMap['plot_no']     && (hl.includes('plot')  && !hl.includes('size')))  autoMap['plot_no']     = idx;
-    if (!autoMap['plot_size']   && (hl.includes('size')  || hl.includes('sqft') || hl.includes('area'))) autoMap['plot_size'] = idx;
-    if (!autoMap['agreement_value'] && (hl.includes('agr') || hl.includes('total') || hl.includes('value'))) autoMap['agreement_value'] = idx;
-    if (!autoMap['bank_name']   && hl.includes('bank'))   autoMap['bank_name']   = idx;
-    if (!autoMap['loan_status'] && (hl.includes('status') || hl.includes('loan'))) autoMap['loan_status'] = idx;
-    if (!autoMap['amount']      && hl.includes('amount')) autoMap['amount']       = idx;
-    if (!autoMap['remark']      && hl.includes('remark')) autoMap['remark']       = idx;
-    if (!autoMap['contact']     && (hl.includes('contact') || hl.includes('phone') || hl.includes('mobile'))) autoMap['contact'] = idx;
-    if (!autoMap['booking_date'] && hl.includes('date') && !hl.includes('sanc') && !hl.includes('disb')) autoMap['booking_date'] = idx;
-    if (!autoMap['basic_rate']  && (hl.includes('rate') || hl.includes('basic rate'))) autoMap['basic_rate'] = idx;
-    if (!autoMap['sdr']         && hl === 'sdr') autoMap['sdr'] = idx;
+    if (cols['client_name'] === undefined && (hl.includes('name') && !hl.includes('bank'))) cols['client_name'] = i;
+    if (cols['cust_name']   === undefined && (hl.includes('name') || hl.includes('cust'))) cols['cust_name'] = i;
+    if (cols['plot_no']     === undefined && hl.includes('plot') && !hl.includes('size') && !hl.includes('area')) cols['plot_no'] = i;
+    if (cols['plot_size']   === undefined && (hl.includes('size') || hl.includes('sqft') || hl.includes('area'))) cols['plot_size'] = i;
+    if (cols['agreement_value'] === undefined && (hl.includes('agr') || (hl.includes('value') && !hl.includes('basic')))) cols['agreement_value'] = i;
+    if (cols['basic_rate']  === undefined && (hl.includes('rate') || hl.includes('basic rate'))) cols['basic_rate'] = i;
+    if (cols['bank_name']   === undefined && hl.includes('bank') && !hl.includes('banker') && !hl.includes('detail')) cols['bank_name'] = i;
+    if (cols['loan_status'] === undefined && (hl.includes('status') || hl.includes('loan status'))) cols['loan_status'] = i;
+    if (cols['contact']     === undefined && (hl.includes('contact') || hl.includes('mobile') || hl.includes('phone'))) cols['contact'] = i;
+    if (cols['amount']      === undefined && hl.includes('amount')) cols['amount'] = i;
+    if (cols['remark']      === undefined && hl.includes('remark')) cols['remark'] = i;
+    if (cols['cheque_no']   === undefined && (hl.includes('chq') || hl.includes('cheque') || hl.includes('ref'))) cols['cheque_no'] = i;
+    if (cols['booking_date']=== undefined && hl.includes('date') && !hl.includes('sanc') && !hl.includes('disb') && !hl.includes('sdr')) cols['booking_date'] = i;
   });
-
-  importState.mappings[sheetName].cols = autoMap;
-
-  const eid = CSS.escape(sheetName);
-  return `<div style="margin-bottom:10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--ink-faint);">Map columns from your Excel to CRM fields</div>
-  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
-    ${defs.map(d => `
-      <div style="display:flex;flex-direction:column;gap:4px;">
-        <label style="font-size:10px;font-weight:700;color:${d.required?'var(--gold)':'var(--ink-light)'};text-transform:uppercase;letter-spacing:.8px;">${d.label}${d.required?' *':''}</label>
-        <select id="colmap-${eid}-${d.key}" onchange="updateColMap('${sheetName.replace(/'/g,"\'")}','${d.key}',this.value)"
-          style="padding:6px 9px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:'Outfit',sans-serif;">
-          <option value="">— Skip —</option>
-          ${headers.map((h,i) => `<option value="${i}" ${autoMap[d.key]===i?'selected':''}>${escH(h)}</option>`).join('')}
-        </select>
-      </div>`).join('')}
-  </div>`;
+  return cols;
 }
 
-function onSheetTypeChange(sheetName, type) {
-  importState.mappings[sheetName].type = type;
-  const eid = CSS.escape(sheetName);
-  const mapDiv = el('col-map-' + eid);
-  if (!mapDiv) return;
-  if (type === 'skip') { mapDiv.style.display = 'none'; return; }
-  mapDiv.style.display = '';
-  const ws = importState.workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
-  const headers = (rows[0] || []).map(h => String(h).trim());
-  mapDiv.innerHTML = buildColMapping(sheetName, headers, type);
-}
-
-function updateColMap(sheetName, fieldKey, colIdx) {
-  if (!importState.mappings[sheetName]) return;
-  if (colIdx === '') { delete importState.mappings[sheetName].cols[fieldKey]; }
-  else { importState.mappings[sheetName].cols[fieldKey] = parseInt(colIdx); }
+function buildColMapHTML(sheetName, headers, type) {
+  const defs = COL_DEFS[type] || [];
+  const existing = IMP.mappings[sheetName]?.cols || {};
+  const sid = safeId(sheetName);
+  const opts = headers.map((h,i) => `<option value="${i}">${i+1}. ${escH(h||'(empty)')}</option>`).join('');
+  return `
+    <div style="margin-bottom:10px;font-size:10.5px;color:var(--ink-faint);">Map your Excel columns → CRM fields. Auto-detected where possible.</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+      ${defs.map(([key, label, req]) => `
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label style="font-size:10px;font-weight:700;color:${req?'var(--gold)':'var(--ink-faint)'};text-transform:uppercase;letter-spacing:.8px;">${escH(label)}${req?' *':''}</label>
+          <select id="cm_${sid}_${key}" onchange="IMP.mappings['${sheetName.replace(/'/g,"\\'")}'].cols['${key}']=this.value===''?undefined:parseInt(this.value)"
+            style="padding:6px 9px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:'Outfit',sans-serif;background:white;">
+            <option value="">— Skip —</option>
+            ${opts.replace(`value="${existing[key]}"`, `value="${existing[key]}" selected`)}
+          </select>
+        </div>`).join('')}
+    </div>`;
 }
 
 function previewImport() {
-  // Parse all sheets based on mappings
-  const wb = importState.workbook;
-  let totalRows = 0;
+  let total = 0;
   const summary = [];
+  IMP.parsed = {};
 
-  wb.SheetNames.forEach(sheetName => {
-    const mapping = importState.mappings[sheetName];
-    if (mapping.type === 'skip') return;
-
-    const ws = wb.Sheets[sheetName];
+  IMP.sheets.forEach(sheetName => {
+    const mapping = IMP.mappings[sheetName];
+    if (!mapping || mapping.type === 'skip') return;
+    const ws = IMP.wb.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'', raw:false });
-    const dataRows = rows.slice(1).filter(row => row.some(c => c !== '' && c !== null));
+    const dataRows = rows.slice(1).filter(r => r.some(c => c !== '' && c !== null && c !== undefined));
 
     const parsed = dataRows.map(row => {
       const obj = {};
       Object.entries(mapping.cols).forEach(([field, colIdx]) => {
-        const val = row[colIdx];
-        obj[field] = (val !== undefined && val !== null) ? String(val).trim() : '';
+        if (colIdx !== undefined && colIdx !== '') {
+          const val = row[parseInt(colIdx)];
+          obj[field] = (val !== undefined && val !== null) ? String(val).trim() : '';
+        }
       });
       return obj;
-    }).filter(obj => {
-      // Must have at least a name field
-      return obj.client_name || obj.cust_name;
-    });
+    }).filter(obj => obj.client_name || obj.cust_name);
 
-    importState.parsed[sheetName] = parsed;
-    totalRows += parsed.length;
+    IMP.parsed[sheetName] = parsed;
+    total += parsed.length;
     summary.push({ sheet: sheetName, type: mapping.type, count: parsed.length });
   });
 
-  // Show step 3
-  el('import-step-2').style.display = 'none';
-  el('import-step-3').style.display = '';
+  hide('import-step-2');
+  show('import-step-3');
 
-  el('import-summary').innerHTML = summary.map(s => `
-    <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:white;border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:8px;">
+  el('import-summary').innerHTML = summary.length ? summary.map(s => `
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:white;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;">
       <span style="font-size:20px;">${s.type==='bookings'?'🏡':s.type==='cheques'?'🧾':'📁'}</span>
-      <div><div style="font-weight:600;font-size:13px;">${escH(s.sheet)}</div><div style="font-size:12px;color:var(--ink-faint);">Import as: ${s.type}</div></div>
-      <div style="margin-left:auto;font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700;color:var(--ink);">${s.count}</div>
+      <div><div style="font-weight:600;font-size:13px;">${escH(s.sheet)}</div><div style="font-size:11px;color:var(--ink-faint);">→ ${s.type}</div></div>
+      <div style="margin-left:auto;font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700;">${s.count}</div>
       <div style="font-size:11px;color:var(--ink-faint);">rows</div>
-    </div>`).join('') || '<div style="color:var(--ink-faint);font-size:13px;">No valid rows found. Check your column mappings.</div>';
+    </div>`) .join('') : '<div style="color:var(--rose);font-size:13px;padding:12px;">No valid rows found. Go back and check column mappings — make sure Client Name is mapped.</div>';
 
-  el('import-total').textContent = totalRows;
-  el('import-confirm-btn').disabled = totalRows === 0;
+  el('import-total').textContent = total;
+  el('import-confirm-btn').disabled = total === 0;
 }
 
 async function runImport() {
-  const projId = importState.projectId;
-  if (!projId) { toast('No project selected','err'); return; }
-
+  const projId = IMP.projectId;
+  if (!projId) { toast('No project selected', 'err'); return; }
   setBtn('import-confirm-btn', true);
-  el('import-progress').style.display = '';
+  show('import-progress');
   let imported = 0, errors = 0;
 
-  for (const [sheetName, rows] of Object.entries(importState.parsed)) {
-    const type = importState.mappings[sheetName].type;
+  const allEntries = Object.entries(IMP.parsed);
+  for (let ei = 0; ei < allEntries.length; ei++) {
+    const [sheetName, rows] = allEntries[ei];
+    const type = IMP.mappings[sheetName].type;
     if (!rows.length) continue;
+    el('import-progress-text').textContent = `Importing "${sheetName}" (${rows.length} rows)…`;
 
-    el('import-progress-text').textContent = `Importing ${sheetName}… (${rows.length} rows)`;
-
-    // Batch insert in chunks of 50
     const CHUNK = 50;
     for (let i = 0; i < rows.length; i += CHUNK) {
-      const chunk = rows.slice(i, i + CHUNK).map(row => {
-        const base = { project_id: projId, created_by: S.profile.id };
-        if (type === 'bookings') {
-          return {
-            ...base,
-            serial_no:           toNum(row.serial_no) || null,
-            booking_date:        toDate(row.booking_date),
-            client_name:         row.client_name || 'Unknown',
-            contact:             row.contact || '',
-            plot_no:             row.plot_no || '',
-            plot_size:           toNum(row.plot_size) || null,
-            basic_rate:          toNum(row.basic_rate) || null,
-            infra:               toNum(row.infra) || 100,
-            agreement_value:     toNum(row.agreement_value) || null,
-            sdr:                 toNum(row.sdr) || null,
-            sdr_minus:           toNum(row.sdr_minus) || 0,
-            maintenance:         toNum(row.maintenance) || 0,
-            legal_charges:       toNum(row.legal_charges) || 25000,
-            bank_name:           row.bank_name || '',
-            banker_contact:      row.banker_contact || '',
-            loan_status:         normalizeLoanStatus(row.loan_status),
-            sanction_received:   row.sanction_received || null,
-            sanction_date:       toDate(row.sanction_date),
-            disbursement_status: normalizeDisb(row.disbursement_status),
-            disbursement_date:   toDate(row.disbursement_date),
-            disbursement_remark: row.disbursement_remark || '',
-            remark:              row.remark || '',
-          };
-        } else if (type === 'cheques') {
-          return {
-            ...base,
-            cust_name:   row.cust_name || 'Unknown',
-            plot_no:     row.plot_no || '',
-            bank_detail: row.bank_detail || '',
-            cheque_no:   row.cheque_no || '',
-            cheque_date: toDate(row.cheque_date),
-            amount:      toNum(row.amount) || 0,
-            entry_type:  normalizeEntryType(row.entry_type),
-          };
-        } else if (type === 'prev') {
-          return {
-            project_id:      projId,
-            client_name:     row.client_name || 'Unknown',
-            plot_no:         row.plot_no || '',
-            plot_size:       toNum(row.plot_size) || null,
-            agreement_value: toNum(row.agreement_value) || null,
-            notes:           row.notes || '',
-          };
-        }
-      }).filter(Boolean);
-
+      const chunk = rows.slice(i, i + CHUNK).map(row => buildInsertRow(row, type, projId)).filter(Boolean);
+      if (!chunk.length) continue;
       const table = type === 'bookings' ? 'bookings' : type === 'cheques' ? 'cheques' : 'prev_bookings';
       const { error } = await sb.from(table).insert(chunk);
-      if (error) { errors += chunk.length; console.error('Import error:', error); }
-      else { imported += chunk.length; }
-
-      // Update progress bar
-      const pct = Math.round((i + CHUNK) / rows.length * 100);
-      el('import-progress-bar').style.width = Math.min(pct, 100) + '%';
+      if (error) { errors += chunk.length; console.error(sheetName, error.message); }
+      else imported += chunk.length;
+      const pct = Math.round(((ei / allEntries.length) + (i / rows.length / allEntries.length)) * 100);
+      el('import-progress-bar').style.width = Math.min(pct, 99) + '%';
     }
   }
 
+  el('import-progress-bar').style.width = '100%';
+  await new Promise(r => setTimeout(r, 400));
   setBtn('import-confirm-btn', false);
-  el('import-progress').style.display = 'none';
-  el('import-step-3').style.display = 'none';
-  el('import-result').style.display = '';
-  el('import-result-ok').textContent  = imported;
+  hide('import-step-3');
+  hide('import-progress');
+  show('import-result');
+  el('import-result-ok').textContent = imported;
   el('import-result-err').textContent = errors;
-
-  if (imported > 0) {
-    toast(`✓ Imported ${imported} records successfully!`);
-    // Refresh project data if we're viewing this project
-    if (S.curProj?.id === projId) await loadProjData();
-  }
+  if (imported > 0 && S.curProj?.id === projId) await loadProjData();
+  toast(imported > 0 ? `✓ Imported ${imported} records!` : 'No records imported', imported > 0 ? 'ok' : 'err');
 }
 
-// ── IMPORT HELPERS ────────────────────────────────────────────
-function toNum(v) {
-  if (!v && v !== 0) return null;
-  const n = parseFloat(String(v).replace(/[₹,\s]/g,''));
-  return isNaN(n) ? null : n;
-}
-
-function toDate(v) {
-  if (!v) return null;
-  // Already a date string
-  if (/^\d{4}-\d{2}-\d{2}/.test(String(v))) return String(v).substring(0,10);
-  // DD/MM/YYYY or DD.MM.YYYY
-  const m = String(v).match(/(\d{1,2})[.\/](\d{1,2})[.\/](\d{2,4})/);
-  if (m) {
-    const y = m[3].length === 2 ? '20'+m[3] : m[3];
-    return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
-  }
-  // Excel serial number
-  const n = parseFloat(v);
-  if (!isNaN(n) && n > 40000) {
-    const d = new Date(Math.round((n - 25569) * 86400 * 1000));
-    return d.toISOString().substring(0,10);
+function buildInsertRow(row, type, projId) {
+  const base = { project_id: projId, created_by: S.profile?.id };
+  if (type === 'bookings') {
+    const name = row.client_name || '';
+    if (!name) return null;
+    return { ...base,
+      serial_no: toInt(row.serial_no), booking_date: toDate(row.booking_date),
+      client_name: name, contact: row.contact||'',
+      plot_no: row.plot_no||'', plot_size: toNum(row.plot_size),
+      basic_rate: toNum(row.basic_rate), infra: toNum(row.infra)||100,
+      agreement_value: toNum(row.agreement_value), sdr: toNum(row.sdr),
+      sdr_minus: toNum(row.sdr_minus)||0, maintenance: toNum(row.maintenance)||0,
+      legal_charges: toNum(row.legal_charges)||25000,
+      bank_name: row.bank_name||'', banker_contact: row.banker_contact||'',
+      loan_status: normLoanStatus(row.loan_status),
+      sanction_received: row.sanction_received||null,
+      sanction_date: toDate(row.sanction_date),
+      disbursement_status: normDisb(row.disbursement_status),
+      disbursement_date: toDate(row.disbursement_date),
+      disbursement_remark: row.disbursement_remark||'',
+      remark: row.remark||'',
+    };
+  } else if (type === 'cheques') {
+    const name = row.cust_name || '';
+    if (!name) return null;
+    return { ...base,
+      cust_name: name, plot_no: row.plot_no||'',
+      bank_detail: row.bank_detail||'', cheque_no: row.cheque_no||'',
+      cheque_date: toDate(row.cheque_date), amount: toNum(row.amount)||0,
+      entry_type: normEntryType(row.entry_type),
+    };
+  } else if (type === 'prev') {
+    const name = row.client_name || '';
+    if (!name) return null;
+    return { project_id: projId,
+      client_name: name, plot_no: row.plot_no||'',
+      plot_size: toNum(row.plot_size), agreement_value: toNum(row.agreement_value),
+      notes: row.notes||'',
+    };
   }
   return null;
 }
 
-function normalizeLoanStatus(v) {
+function toNum(v) { if (!v && v!==0) return null; const n=parseFloat(String(v).replace(/[₹,\s]/g,'')); return isNaN(n)?null:n; }
+function toInt(v) { if (!v) return null; const n=parseInt(v); return isNaN(n)?null:n; }
+function toDate(v) {
+  if (!v) return null;
+  const s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0,10);
+  const m = s.match(/(\d{1,2})[.\/\-](\d{1,2})[.\/\-](\d{2,4})/);
+  if (m) { const y=m[3].length===2?'20'+m[3]:m[3]; return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; }
+  const n=parseFloat(v);
+  if (!isNaN(n)&&n>40000) { const d=new Date(Math.round((n-25569)*86400*1000)); return d.toISOString().substring(0,10); }
+  return null;
+}
+function normLoanStatus(v) {
   if (!v) return 'File Given';
-  const vl = String(v).toLowerCase();
-  if (vl.includes('agreement') || vl.includes('completed') || vl.includes('done') && vl.includes('agr')) return 'Agreement Completed';
+  const vl=String(v).toLowerCase();
+  if (vl.includes('agreement')||vl.includes('completed')) return 'Agreement Completed';
   if (vl.includes('disburs')) return 'Disbursement Done';
   if (vl.includes('sanction')) return 'Sanction Received';
   if (vl.includes('cancel')) return 'Cancelled';
-  if (vl.includes('process') || vl.includes('under')) return 'Under Process';
-  if (vl.includes('file') || vl.includes('given')) return 'File Given';
+  if (vl.includes('process')||vl.includes('under')) return 'Under Process';
   return 'File Given';
 }
-
-function normalizeDisb(v) {
-  if (!v) return null;
-  const vl = String(v).toLowerCase();
-  if (vl === 'done' || vl === 'yes' || vl === 'completed' || vl === '1') return 'done';
-  return null;
-}
-
-function normalizeEntryType(v) {
+function normDisb(v) { if (!v) return null; const vl=String(v).toLowerCase(); return (vl==='done'||vl==='yes'||vl==='1'||vl==='completed')?'done':null; }
+function normEntryType(v) {
   if (!v) return 'RPM';
-  const vl = String(v).toUpperCase().trim();
-  if (['RPM','SM','NILL','BOUNCE','OTHER'].includes(vl)) return vl === 'OTHER' ? 'Other' : vl;
+  const vl=String(v).toUpperCase().trim();
+  if (vl==='RPM'||vl==='SM'||vl==='NILL'||vl==='BOUNCE') return vl;
   if (vl.includes('CASH')) return 'cash';
   return 'RPM';
 }

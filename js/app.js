@@ -161,11 +161,24 @@ async function boot(authUser) {
   if (S.user?.id === authUser.id) return; // already booted
   showLoader(true);
   try {
-    const { data: prof, error } = await sb.from('profiles').select('*').eq('id', authUser.id).single();
+    let { data: prof, error } = await sb.from('profiles').select('*').eq('id', authUser.id).single();
+    
+    // Profile missing — try to auto-create it from auth metadata
     if (error || !prof) {
-      await sb.auth.signOut();
-      showLogin('Account not configured. Contact your administrator.');
-      return;
+      const meta = authUser.user_metadata || {};
+      const name = meta.full_name || authUser.email?.split('@')[0] || 'User';
+      // Check if there are any superadmins — if none, make this user superadmin
+      const { data: admins } = await sb.from('profiles').select('id').eq('role','superadmin').limit(1);
+      const role = (!admins || admins.length === 0) ? 'superadmin' : 'sales';
+      const { data: newProf, error: insErr } = await sb.from('profiles')
+        .insert({ id: authUser.id, full_name: name, role })
+        .select().single();
+      if (insErr || !newProf) {
+        await sb.auth.signOut();
+        showLogin('Account setup incomplete. Ask your admin to run the profile setup SQL.');
+        return;
+      }
+      prof = newProf;
     }
     S.user = authUser; S.profile = prof;
     el('ucName').textContent   = prof.full_name.split(' ')[0] || prof.full_name;

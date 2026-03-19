@@ -222,3 +222,34 @@ END; $$;
 -- ── CREATE SUPERADMIN ─────────────────────────────────────────
 -- Run this separately after the above:
 -- SELECT public.create_crm_user('your@email.com', 'YourPassword123!', 'Super Admin', 'superadmin');
+
+-- ── AUTO-CREATE PROFILE ON AUTH USER CREATION ─────────────────
+-- This trigger fires whenever a new user is created in auth.users
+-- ensuring profiles row always exists even if created via Dashboard
+
+CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+  v_name TEXT;
+  v_role TEXT;
+  v_count INTEGER;
+BEGIN
+  -- Get name from metadata
+  v_name := COALESCE(
+    NEW.raw_user_meta_data->>'full_name',
+    split_part(NEW.email, '@', 1)
+  );
+  -- If no superadmin exists yet, first user becomes superadmin
+  SELECT COUNT(*) INTO v_count FROM public.profiles WHERE role = 'superadmin';
+  v_role := CASE WHEN v_count = 0 THEN 'superadmin' ELSE 'sales' END;
+  -- Insert profile (ignore if already exists)
+  INSERT INTO public.profiles (id, full_name, role)
+  VALUES (NEW.id, v_name, v_role)
+  ON CONFLICT (id) DO NOTHING;
+  RETURN NEW;
+END; $$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_auth_user();

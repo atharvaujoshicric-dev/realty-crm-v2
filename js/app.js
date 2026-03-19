@@ -1170,16 +1170,18 @@ const CHEQUE_MAP = { cust_name:0, plot_no:1, bank_detail:2, cheque_no:3, cheque_
 const PREV_MAP   = { client_name:0, plot_no:1, plot_size:2, agreement_value:3 };
 
 function detectSheetType(sheetName, headers){
-  const nl=sheetName.toLowerCase();
-  const hstr=headers.map(h=>String(h||'').toLowerCase()).join(' ');
-  if(nl.includes('bw')||nl.includes('sotr')) return 'bookings';
-  if(nl.includes('cheque')||nl.includes('payment')) return 'cheques';
+  const nl = sheetName.toLowerCase().trim();
+  const hstr = headers.map(h=>String(h||'').toLowerCase()).join(' ');
+  // Primary data sheets
+  if(nl==='bwxsotr') return 'bookings';
+  if(nl.includes('cheque')) return 'cheques';
   if(nl.includes('prev')||nl.includes('previous')) return 'prev';
-  if(nl==='sheet4') return 'bookings';
-  // Skip summary/pivot sheets
-  if(nl.includes('summary')||nl.includes('sheet1')||nl.includes('sheet2')||nl.includes('sheet3')) return 'skip';
-  if(hstr.includes('agreement value')&&hstr.includes('name')) return 'bookings';
-  if(hstr.includes('amount')&&hstr.includes('cust')) return 'cheques';
+  // All other sheets are derived/duplicate — skip
+  // Sheet1 = status subset of BWxSOTR
+  // Sheet2 = draft status subset
+  // Sheet3 = pivot count
+  // Sheet4 = financial subset
+  // Summary = aggregate totals
   return 'skip';
 }
 
@@ -1317,14 +1319,48 @@ function previewImport(){
     const mapping=IMP.maps[sheetName]; if(!mapping||mapping.type==='skip') return;
     const ws=IMP.wb.Sheets[sheetName];
     const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false});
+    // For cheques: row 0 = header, row 1 = first data row
+    // Continuation rows (no customer name) inherit from previous named row
     const dataRows=rows.slice(1).filter(r=>r.some(c=>c!==''&&c!==null&&c!==undefined));
-    const parsed=dataRows.map(row=>{
-      const obj={};
-      Object.entries(mapping.cols).forEach(([field,colIdx])=>{
-        if(colIdx!==undefined&&colIdx!==''){const val=row[parseInt(colIdx)];obj[field]=(val!==undefined&&val!==null)?String(val).trim():'';}
+    
+    let parsed;
+    if(mapping.type==='cheques'){
+      // Handle grouped cheque rows with continuation logic
+      let lastCustName='', lastPlotNo='';
+      parsed=[];
+      dataRows.forEach(row=>{
+        const obj={};
+        Object.entries(mapping.cols).forEach(([field,colIdx])=>{
+          if(colIdx!==undefined&&colIdx!==''){const val=row[parseInt(colIdx)];obj[field]=(val!==undefined&&val!==null)?String(val).trim():'';}
+        });
+        // If this row has a customer name, update last known
+        if(obj.cust_name && obj.cust_name.trim()) {
+          lastCustName = obj.cust_name.trim();
+          if(obj.plot_no && obj.plot_no.trim()) lastPlotNo = obj.plot_no.trim();
+        } else {
+          // Continuation row — inherit customer name and plot
+          obj._custName = lastCustName;
+          obj._plotNo   = lastPlotNo;
+        }
+        parsed.push(obj);
       });
-      return obj;
-    }).filter(obj=>obj.client_name||obj.cust_name);
+      // Filter: must have a name (own or inherited), have an amount, and not be NILL total rows
+      parsed = parsed.filter(obj=>{
+        const name = obj.cust_name || obj._custName || '';
+        const amount = parseFloat(String(obj.amount||'').replace(/[₹,\s]/g,''))||0;
+        const entryType = String(obj.entry_type||'').toUpperCase();
+        const isNillTotal = entryType.includes('NILL') && !obj.bank_detail && !obj.cheque_no && !obj.cheque_date;
+        return name && amount > 0 && !isNillTotal;
+      });
+    } else {
+      parsed=dataRows.map(row=>{
+        const obj={};
+        Object.entries(mapping.cols).forEach(([field,colIdx])=>{
+          if(colIdx!==undefined&&colIdx!==''){const val=row[parseInt(colIdx)];obj[field]=(val!==undefined&&val!==null)?String(val).trim():'';}
+        });
+        return obj;
+      }).filter(obj=>obj.client_name||obj.cust_name);
+    }
     IMP.parsed[sheetName]=parsed; total+=parsed.length;
     summary.push({sheet:sheetName,type:mapping.type,count:parsed.length});
   });
@@ -1367,54 +1403,91 @@ async function runImport(){
   toast(imported>0?`✓ Imported ${imported} records!`:'No records imported',imported>0?'ok':'err');
 }
 
-function buildImpRow(row,type,projId){
+function buildImpRow(row, type, projId){
   if(type==='bookings'){
-    const name=row.client_name||''; if(!name) return null;
-    // Agreement Status (col 18): "done" = Agreement Completed AND Disbursed
-    // Disbursement Status (col 34): "done" = disbursed; rest = banker remark
-    const agreeRaw=String(row.loan_status||'').trim().toLowerCase().replace(/[^a-z]/g,'');
-    const disbRaw =String(row.disbursement_status||'').trim();
-    const disbRawL=disbRaw.toLowerCase().replace(/[^a-z]/g,'');
-    const isDisbDone = disbRawL==='done' || agreeRaw==='done';
-    const disbRemark = (!isDisbDone && disbRaw && disbRawL!=='') ? disbRaw : '';
-    const sancRecv   = String(row.sanction_received||'').trim();
+    const name = row.client_name||''; if(!name) return null;
+    // col 18 (Agreement Status): "done" = full agreement+disbursement completed
+    // col 34 (Disbursement Status): "done" = disbursed; rest = banker's remark text
+    const agreeRaw = String(row.loan_status||'').trim().toLowerCase().replace(/[^a-z]/g,'');
+    const disbRaw  = String(row.disbursement_status||'').trim();
+    const disbRawL = disbRaw.toLowerCase().replace(/[^a-z]/g,'');
+    const isDisbDone = disbRawL === 'done' || agreeRaw === 'done';
+    // If disbursement col has text (not "done"), treat as banker remark
+    const disbRemark = (!isDisbDone && disbRaw && disbRawL !== '') ? disbRaw : '';
+    const sancRecv = String(row.sanction_received||'').trim();
+    // Normalize bank name (Axis, HDFC, IDBI etc from col 21)
+    const bankRaw = String(row.bank_name||'').trim();
+    const bankNorm = bankRaw.toLowerCase();
+    let bank = bankRaw;
+    if(bankNorm==='axis'||bankNorm.startsWith('axis')) bank='Axis';
+    else if(bankNorm==='hdfc'||bankNorm.startsWith('hdfc')) bank='HDFC';
+    else if(bankNorm==='idbi'||bankNorm.startsWith('idbi')) bank='IDBI';
+    else if(bankNorm==='icici'||bankNorm.startsWith('icici')) bank='ICICI';
+    else if(bankNorm==='sbi'||bankNorm.startsWith('sbi')) bank='SBI';
+    else if(bankNorm==='self') bank='Self';
     return {
-      project_id:projId,
-      serial_no:   toInt(row.serial_no),
-      booking_date:toDate(row.booking_date),
+      project_id: projId,
+      serial_no:  toInt(row.serial_no),
+      booking_date: toDate(row.booking_date),
       client_name: name,
-      contact:     row.contact||'',
-      plot_no:     row.plot_no||'',
-      plot_size:   toNum(row.plot_size),
-      basic_rate:  toNum(row.basic_rate),
-      infra:       toNum(row.infra)||100,
+      contact: row.contact||'',
+      plot_no: row.plot_no||'',
+      plot_size: toNum(row.plot_size),
+      basic_rate: toNum(row.basic_rate),
+      infra: toNum(row.infra)||100,
       agreement_value: toNum(row.agreement_value),
-      sdr:         toNum(row.sdr),
-      sdr_minus:   toNum(row.sdr_minus)||0,
+      sdr: toNum(row.sdr),
+      sdr_minus: toNum(row.sdr_minus)||0,
       maintenance: toNum(row.maintenance)||0,
       legal_charges: toNum(row.legal_charges)||25000,
-      bank_name:   row.bank_name||'',
+      bank_name: bank,
       banker_contact: row.banker_contact||'',
       loan_status: normLoanStatus(row.loan_status),
       sanction_received: sancRecv.toLowerCase().startsWith('y') ? 'Yes' : null,
-      sanction_date:  toDate(row.sanction_date),
+      sanction_date: toDate(row.sanction_date),
       sanction_letter: row.sanction_letter||null,
-      sdr_received:    toNum(row.sdr_received),
+      sdr_received: toNum(row.sdr_received),
       sdr_received_date: toDate(row.sdr_received_date),
       disbursement_status: isDisbDone ? 'done' : null,
-      disbursement_date:   toDate(row.disbursement_date),
+      disbursement_date: toDate(row.disbursement_date),
       disbursement_remark: disbRemark,
       doc_submitted: row.doc_submitted||'',
-      remark:        row.remark||'',
+      remark: row.remark||'',
     };
   }
   if(type==='cheques'){
-    const name=row.cust_name||''; if(!name) return null;
-    return {project_id:projId,cust_name:name,plot_no:row.plot_no||'',bank_detail:row.bank_detail||'',cheque_no:row.cheque_no||'',cheque_date:toDate(row.cheque_date),amount:toNum(row.amount)||0,entry_type:normEntry(row.entry_type)};
+    // Cheque sheet has grouped rows: first row has customer name, 
+    // subsequent rows for same customer have no name (continuation)
+    // The "_custName" field is injected by previewImport for continuation rows
+    const name = row.cust_name || row._custName || '';
+    if(!name) return null;
+    const amount = toNum(row.amount)||0;
+    // Skip total/NILL rows (no bank, no cheque, no date — just a total line)
+    const isNillRow = (!row.bank_detail && !row.cheque_no && !row.cheque_date && 
+                       (String(row.entry_type||'').toUpperCase().includes('NILL') || !row.entry_type));
+    if(isNillRow) return null;
+    if(amount <= 0) return null;
+    return {
+      project_id: projId,
+      cust_name: name,
+      plot_no: row.plot_no||row._plotNo||'',
+      bank_detail: row.bank_detail||'',
+      cheque_no: row.cheque_no||'',
+      cheque_date: toDate(row.cheque_date),
+      amount: amount,
+      entry_type: normEntry(row.entry_type),
+    };
   }
   if(type==='prev'){
-    const name=row.client_name||''; if(!name) return null;
-    return {project_id:projId,client_name:name,plot_no:row.plot_no||'',plot_size:toNum(row.plot_size),agreement_value:toNum(row.agreement_value),notes:row.notes||''};
+    const name = row.client_name||''; if(!name) return null;
+    return {
+      project_id: projId,
+      client_name: name,
+      plot_no: row.plot_no||'',
+      plot_size: toNum(row.plot_size),
+      agreement_value: toNum(row.agreement_value),
+      notes: row.notes||'',
+    };
   }
   return null;
 }

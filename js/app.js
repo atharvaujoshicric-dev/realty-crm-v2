@@ -23,23 +23,65 @@ const sb = window.supabase.createClient(SB_URL, SB_KEY, {
   }
 });
 
-// ── Edge Function caller ─────────────────────────────────────
+// ── User Management — Edge Function with SQL RPC fallback ────
 async function api(action, payload = {}) {
-  const { data: { session } } = await sb.auth.getSession();
-  const token = session?.access_token;
-  if (!token) throw new Error('Not authenticated');
-  const res = await fetch(`${SB_URL}/functions/v1/manage-users`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      'apikey': SB_KEY
-    },
-    body: JSON.stringify({ action, ...payload })
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-  return json;
+  // Try edge function first
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    const token = session?.access_token;
+    if (!token) throw new Error('Not authenticated');
+    const res = await fetch(`${SB_URL}/functions/v1/manage-users`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        'apikey': SB_KEY
+      },
+      body: JSON.stringify({ action, ...payload })
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+    return json;
+  } catch(e) {
+    // Edge function not deployed or network error — fall back to SQL RPC
+    if (e.message === 'Failed to fetch' || e.message.includes('NetworkError') || e.message.includes('fetch')) {
+      return await apiRPC(action, payload);
+    }
+    throw e;
+  }
+}
+
+// SQL RPC fallback (works without edge function via SECURITY DEFINER functions)
+async function apiRPC(action, payload) {
+  if (action === 'create') {
+    const { email, password, name, role, project_id } = payload;
+    const { data: uid, error } = await sb.rpc('create_crm_user', {
+      p_email: email, p_password: password, p_name: name, p_role: role
+    });
+    if (error) throw new Error(error.message);
+    if (project_id && uid) {
+      await sb.rpc('assign_to_project', { p_user_id: uid, p_project_id: project_id, p_role: role === 'admin' ? 'admin' : 'sales' });
+    }
+    return { id: uid, email, name, role };
+  }
+  if (action === 'delete') {
+    const { user_id } = payload;
+    const { error } = await sb.rpc('delete_crm_user', { p_user_id: user_id });
+    if (error) throw new Error(error.message);
+    return { success: true };
+  }
+  if (action === 'update') {
+    const { user_id, name, role, password } = payload;
+    if (name || role) {
+      await sb.from('profiles').update({ ...(name&&{full_name:name}), ...(role&&{role}) }).eq('id', user_id);
+    }
+    if (password) {
+      const { error } = await sb.rpc('update_user_password', { p_user_id: user_id, p_password: password });
+      if (error) throw new Error(error.message);
+    }
+    return { success: true };
+  }
+  throw new Error('Unknown action: ' + action);
 }
 
 // ── State ────────────────────────────────────────────────────

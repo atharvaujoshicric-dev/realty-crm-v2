@@ -6,6 +6,24 @@
 const SB_URL = 'https://pwofvcxritpiauqbdkty.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB3b2Z2Y3hyaXRwaWF1cWJka3R5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4MzMyODgsImV4cCI6MjA4OTQwOTI4OH0.Qc5QREC1yFwQq0NWTGotDRPUkiqAn38OpmkC-M7pvR0';
 
+// ── EDGE FUNCTION HELPER ────────────────────────────────
+async function callEdgeFn(action, payload) {
+  const { data:{ session } } = await sb.auth.getSession();
+  const token = session?.access_token;
+  const res = await fetch(`${SB_URL}/functions/v1/manage-users`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+      'apikey': SB_KEY,
+    },
+    body: JSON.stringify({ action, ...payload })
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Edge function error');
+  return json;
+}
+
 // ── SUPABASE ──────────────────────────────────────────
 const safeSto = {
   getItem:    k => { try { return localStorage.getItem(k); }    catch(e){ return null; } },
@@ -275,13 +293,14 @@ async function saveProject() {
     data.swatch = ((await sb.from('projects').select('id')).data?.length||0)%5;
     const { data:proj, error:pe } = await sb.from('projects').insert(data).select().single();
     if (pe) { setBtn('pm-save',false); toast(pe.message,'err'); return; }
-    const { data:aId, error:ae } = await sb.rpc('create_crm_user',{p_email:amail,p_password:apass,p_name:aname,p_role:'admin'});
-    if (ae) { setBtn('pm-save',false); toast('Project created but admin user failed: '+ae.message,'err'); return; }
-    await sb.rpc('assign_to_project',{p_user_id:aId,p_project_id:proj.id,p_role:'admin'});
+    let adminResult;
+    try {
+      adminResult = await callEdgeFn('create', {email:amail,password:apass,name:aname,role:'admin',project_id:proj.id,project_role:'admin'});
+    } catch(e) { setBtn('pm-save',false); toast('Project created but admin user failed: '+e.message,'err'); return; }
     const sname=v('pm-sname').trim(), smail=v('pm-smail').trim(), spass=v('pm-spass').trim();
     if (smail&&spass&&sname&&spass.length>=8) {
-      const { data:sId } = await sb.rpc('create_crm_user',{p_email:smail,p_password:spass,p_name:sname,p_role:'sales'});
-      if (sId) await sb.rpc('assign_to_project',{p_user_id:sId,p_project_id:proj.id,p_role:'sales'});
+      try { await callEdgeFn('create', {email:smail,password:spass,name:sname,role:'sales',project_id:proj.id,project_role:'sales'}); }
+      catch(e) { toast('Admin created but sales user failed: '+e.message,'err'); }
     }
     toast('Project created & users provisioned!');
   }
@@ -350,9 +369,13 @@ async function saveUser() {
   if (!name||!email||!pass) { toast('All fields required','err'); return; }
   if (pass.length<8) { toast('Password min 8 characters','err'); return; }
   setBtn('um-save',true);
-  const { data:uid, error } = await sb.rpc('create_crm_user',{p_email:email,p_password:pass,p_name:name,p_role:role});
-  if (error) { setBtn('um-save',false); toast(error.message,'err'); return; }
-  if (projId) await sb.rpc('assign_to_project',{p_user_id:uid,p_project_id:projId,p_role:role});
+  try {
+    await callEdgeFn('create', {email,password:pass,name,role,project_id:projId||null,project_role:role});
+  } catch(e) {
+    setBtn('um-save',false);
+    toast(e.message,'err');
+    return;
+  }
   setBtn('um-save',false);
   closeM('userModal');
   if (S.profile?.role==='superadmin') await renderSAUsers(); else await renderSettings();
@@ -374,7 +397,9 @@ async function saveEditUser() {
   await sb.from('profiles').update({full_name:name,role}).eq('id',S.editUserId);
   if (pass) {
     if (pass.length<8) { setBtn('eu-save',false); toast('Password min 8 characters','err'); return; }
-    await sb.rpc('update_user_password',{p_user_id:S.editUserId,p_password:pass});
+    try {
+      await callEdgeFn('update_password', {user_id:S.editUserId,password:pass});
+    } catch(e) { setBtn('eu-save',false); toast('Password update failed: '+e.message,'err'); return; }
   }
   setBtn('eu-save',false);
   closeM('editUserModal');
@@ -384,8 +409,9 @@ async function saveEditUser() {
 
 async function deleteUser(uid, name) {
   if (!confirm(`Delete user "${name}"?\n\nThey will lose all access permanently.`)) return;
-  const { error } = await sb.rpc('delete_crm_user',{p_user_id:uid});
-  if (error) { toast('Error: '+error.message,'err'); return; }
+  try {
+    await callEdgeFn('delete', {user_id:uid});
+  } catch(e) { toast('Error: '+e.message,'err'); return; }
   if (S.profile?.role==='superadmin') await renderSAUsers(); else await renderSettings();
   toast(`"${name}" deleted`);
 }
@@ -1151,10 +1177,14 @@ function buildImpRow(row,type,projId) {
   const base={project_id:projId,created_by:S.profile?.id};
   if(type==='bookings'){
     const name=row.client_name||''; if(!name) return null;
-    const disbRaw=String(row.disbursement_status||'').toLowerCase().replace(/[^a-z]/g,'');
-    const loanRaw=String(row.loan_status||'').toLowerCase().replace(/[^a-z]/g,'');
-    const disbStatus=(disbRaw==='done'||loanRaw==='done')?'done':null;
-    const disbRemark=!disbStatus&&row.disbursement_status?row.disbursement_status:(row.disbursement_remark||'');
+    // disbursement_status col (col 34): "done" = disbursed, rest = banker remark
+    // loan_status col (col 18 Agreement Status): "done" = agreement completed AND disbursed
+    const disbRaw=String(row.disbursement_status||'').trim();
+    const disbRawL=disbRaw.toLowerCase().replace(/[^a-z]/g,'');
+    const loanRaw=String(row.loan_status||'').trim().toLowerCase().replace(/[^a-z]/g,'');
+    const disbStatus=(disbRawL==='done'||loanRaw==='done')?'done':null;
+    // Put banker remark in disbursement_remark if not "done"
+    const disbRemark=(disbStatus!=='done'&&disbRaw&&disbRawL!=='')?disbRaw:(row.disbursement_remark||'');
     const sancRecv=String(row.sanction_received||'').trim();
     return {...base,serial_no:toInt(row.serial_no),booking_date:toDate(row.booking_date),client_name:name,contact:row.contact||'',plot_no:row.plot_no||'',plot_size:toNum(row.plot_size),basic_rate:toNum(row.basic_rate),infra:toNum(row.infra)||100,agreement_value:toNum(row.agreement_value),sdr:toNum(row.sdr),sdr_minus:toNum(row.sdr_minus)||0,maintenance:toNum(row.maintenance)||0,legal_charges:toNum(row.legal_charges)||25000,bank_name:row.bank_name||'',banker_contact:row.banker_contact||'',loan_status:normLoanStatus(row.loan_status),sanction_received:sancRecv.toLowerCase().startsWith('y')?'Yes':null,sanction_date:toDate(row.sanction_date),sanction_letter:row.sanction_letter||null,sdr_received:toNum(row.sdr_received),sdr_received_date:toDate(row.sdr_received_date),disbursement_status:disbStatus,disbursement_date:toDate(row.disbursement_date),disbursement_remark:disbRemark,doc_submitted:row.doc_submitted||'',remark:row.remark||''};
   }
@@ -1171,15 +1201,26 @@ function buildImpRow(row,type,projId) {
 
 function normLoanStatus(v){
   if(!v) return 'File Given';
-  const vl=String(v).toLowerCase().replace(/[^a-z\s]/g,'').trim();
+  const vl=String(v).toLowerCase().trim();
+  // Agreement Status col (col 18) values
   if(vl==='done') return 'Agreement Completed';
   if(vl.includes('agreement completed')) return 'Agreement Completed';
+  // Disbursement done
   if(vl.includes('disburs')&&vl.includes('done')) return 'Disbursement Done';
-  if(vl.includes('sanction received')) return 'Sanction Received';
+  // Sanction
+  if(vl.includes('sanction received')||vl.includes('sanction recived')||vl.includes('sanction recieved')) return 'Sanction Received';
+  // Sheet1 status values
+  if(vl.includes('agreement completed')||vl.includes('agreement done')) return 'Agreement Completed';
+  // Cancelled
   if(vl.includes('cancel')) return 'Cancelled';
-  if(vl.includes('phase 2')||vl.includes('process')||vl.includes('under')) return 'Under Process';
-  if(vl.includes('file')||vl.includes('submit')||vl.includes('bank')) return 'File Given';
-  if(vl.includes('hdfc')||vl.includes('axis')||vl.includes('idbi')||vl.includes('icici')||vl.includes('sbi')) return 'File Given';
+  // Under process
+  if(vl.includes('phase 2')||vl.includes('under process')||vl.includes('file under process')) return 'Under Process';
+  // Self funding = under process
+  if(vl.includes('self funding')||vl.includes('self fund')) return 'Under Process';
+  // File submitted to bank
+  if(vl.includes('file given')||vl.includes('file submitted')||vl.includes('file subm')) return 'File Given';
+  // Bank names in status = file given
+  if(vl.includes('bank')||(vl.includes('hdfc')||vl.includes('axis')||vl.includes('idbi')||vl.includes('icici')||vl.includes('sbi'))) return 'File Given';
   return 'File Given';
 }
 function normEntry(v){if(!v) return 'RPM';const vl=String(v).toUpperCase().trim();if(['RPM','SM','NILL','BOUNCE'].includes(vl)) return vl;if(vl.includes('CASH')) return 'cash';return 'RPM';}

@@ -88,7 +88,94 @@
     <!-- SA: IMPORT -->
     <div class="page" id="p-sa-import">
       <div class="ph"><div><h1>Import from Excel</h1><p>Upload an existing workbook and map columns to import data into a project</p></div></div>
+      <!-- Mapping Reference Guide -->
+      <div class="card" style="margin-bottom:18px">
+        <div class="card-hd">
+          <span class="card-hd-title">📋 Excel Column Mapping Reference</span>
+          <button class="btn btn-ghost btn-sm" onclick="var g=el('mappingGuide');g.style.display=g.style.display==='none'?'':' none'">Toggle ▾</button>
+        </div>
+        <div id="mappingGuide" style="display:none">
+          <div class="card-body">
+            <p style="font-size:13px;color:var(--inkl);margin-bottom:16px">How your SOTR Excel columns map to CRM fields. The import auto-detects these — verify in Step 2 if needed. <strong>Only import BWxSOTR, Cheque details, and Previous Team Bookings. Skip all other sheets.</strong></p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+              <div>
+                <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--gold);margin-bottom:10px;padding-bottom:5px;border-bottom:1.5px solid var(--border)">BWxSOTR → Bookings</div>
+                <table style="width:100%;font-size:12px;border-collapse:collapse">
+                  <thead><tr><th style="padding:5px 8px;background:var(--paper);border:1px solid var(--border);text-align:left">Col</th><th style="padding:5px 8px;background:var(--paper);border:1px solid var(--border);text-align:left">Excel Header</th><th style="padding:5px 8px;background:var(--paper);border:1px solid var(--border);text-align:left">CRM Field</th></tr></thead>
+                  <tbody>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">A (0)</td><td style="padding:4px 8px;border:1px solid var(--border)">No</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Serial No.</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">B (1)</td><td style="padding:4px 8px;border:1px solid var(--border)">Date</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Booking Date</td></tr>
+                    <tr style="background:var(--goldl)"><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">C (2)</td><td style="padding:4px 8px;border:1px solid var(--border);font-weight:600">Name</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky);font-weight:600">Client Name ★</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">D (3)</td><td style="padding:4px 8px;border:1px solid var(--border)">Contact No</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Contact</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">E (4)</td><td style="padding:4px 8px;border:1px solid var(--border)">Plot No</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Plot No.</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">F (5)</td><td style="padding:4px 8px;border:1px solid var(--border)">Plot Size</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Plot Size (sqft)</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">G (6)</td><td style="padding:4px 8px;border:1px solid var(--border)">Basic Rate</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Basic Rate</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">H (7)</td><td style="padding:4px 8px;border:1px solid var(--border)">Infra</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Infra</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">K (10)</td><td style="padding:4px 8px;border:1px solid var(--border)">Agreement Value</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Agreement Value</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">L (11)</td><td style="padding:4px 8px;border:1px solid var(--border)">SDR</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">SDR</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">M (12)</td><td style="padding:4px 8px;border:1px solid var(--border)">SDR-</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">SDR-</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">N (13)</td><td style="padding:4px 8px;border:1px solid var(--border)">Maintenance</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Maintenance</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">O (14)</td><td style="padding:4px 8px;border:1px solid var(--border)">Legal Charges</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Legal Charges</td></tr>
+                    <tr style="background:var(--skyl)"><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">S (18)</td><td style="padding:4px 8px;border:1px solid var(--border);font-weight:600">Agreement Status</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky);font-weight:600">Loan Status ★★</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">V (21)</td><td style="padding:4px 8px;border:1px solid var(--border)">Bank (HDFC/AXIS…)</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Bank Name</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AC (28)</td><td style="padding:4px 8px;border:1px solid var(--border)">SDR Received</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">SDR Received</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AD (29)</td><td style="padding:4px 8px;border:1px solid var(--border)">SDR Received Date</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">SDR Recv. Date</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AE (30)</td><td style="padding:4px 8px;border:1px solid var(--border)">Sanction Received (Yes/No)</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Sanction Received</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AF (31)</td><td style="padding:4px 8px;border:1px solid var(--border)">Sanction Received on Date</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Sanction Date</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AG (32)</td><td style="padding:4px 8px;border:1px solid var(--border)">Sanction Letter</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Sanction Letter</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AH (33)</td><td style="padding:4px 8px;border:1px solid var(--border)">Banker Contact</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Banker Contact</td></tr>
+                    <tr style="background:var(--skyl)"><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AI (34)</td><td style="padding:4px 8px;border:1px solid var(--border);font-weight:600">Disbursement Status</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky);font-weight:600">Disbursement Status ★★</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AJ (35)</td><td style="padding:4px 8px;border:1px solid var(--border)">Disbursement Done on Date</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Disbursement Date</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AK (36)</td><td style="padding:4px 8px;border:1px solid var(--border)">Remark</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Remark</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AL (37)</td><td style="padding:4px 8px;border:1px solid var(--border)">Document submitted to draft</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Doc Submitted</td></tr>
+                  </tbody>
+                </table>
+                <div style="margin-top:10px;background:var(--skyl);border-radius:7px;padding:10px 12px;font-size:12px;color:var(--sky);line-height:1.7">
+                  <strong>★★ Key mappings:</strong><br>
+                  • <strong>Agreement Status (col S)</strong> = "done" → Agreement Completed<br>
+                  • <strong>Disbursement Status (col AI)</strong> = "done" → Disbursement Done; everything else → saved as Banker Remark
+                </div>
+              </div>
+              <div>
+                <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--gold);margin-bottom:10px;padding-bottom:5px;border-bottom:1.5px solid var(--border)">Cheque details → Cheques</div>
+                <table style="width:100%;font-size:12px;border-collapse:collapse;margin-bottom:18px">
+                  <thead><tr><th style="padding:5px 8px;background:var(--paper);border:1px solid var(--border);text-align:left">Col</th><th style="padding:5px 8px;background:var(--paper);border:1px solid var(--border);text-align:left">Excel Header</th><th style="padding:5px 8px;background:var(--paper);border:1px solid var(--border);text-align:left">CRM Field</th></tr></thead>
+                  <tbody>
+                    <tr style="background:var(--goldl)"><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">A (0)</td><td style="padding:4px 8px;border:1px solid var(--border);font-weight:600">CUST NAME</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky);font-weight:600">Customer Name ★</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">B (1)</td><td style="padding:4px 8px;border:1px solid var(--border)">PLOT NO</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Plot No.</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">C (2)</td><td style="padding:4px 8px;border:1px solid var(--border)">BANK DETAIL</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Bank Detail</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">D (3)</td><td style="padding:4px 8px;border:1px solid var(--border)">CHQ NO</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Cheque/Ref No.</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">E (4)</td><td style="padding:4px 8px;border:1px solid var(--border)">CHQ DATE</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Date</td></tr>
+                    <tr style="background:var(--goldl)"><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">F (5)</td><td style="padding:4px 8px;border:1px solid var(--border);font-weight:600">AMOUNT</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky);font-weight:600">Amount ★</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">G (6)</td><td style="padding:4px 8px;border:1px solid var(--border)">REMARK</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Type (RPM/SM)</td></tr>
+                  </tbody>
+                </table>
+                <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--gold);margin-bottom:10px;padding-bottom:5px;border-bottom:1.5px solid var(--border)">Previous Team Bookings → Prev Team</div>
+                <table style="width:100%;font-size:12px;border-collapse:collapse;margin-bottom:18px">
+                  <thead><tr><th style="padding:5px 8px;background:var(--paper);border:1px solid var(--border);text-align:left">Col</th><th style="padding:5px 8px;background:var(--paper);border:1px solid var(--border);text-align:left">Excel Header</th><th style="padding:5px 8px;background:var(--paper);border:1px solid var(--border);text-align:left">CRM Field</th></tr></thead>
+                  <tbody>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">A (0)</td><td style="padding:4px 8px;border:1px solid var(--border)">Customer Name</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Customer Name ★</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">B (1)</td><td style="padding:4px 8px;border:1px solid var(--border)">Plot Number</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Plot No.</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">C (2)</td><td style="padding:4px 8px;border:1px solid var(--border)">Plot Size</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Plot Size</td></tr>
+                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">D (3)</td><td style="padding:4px 8px;border:1px solid var(--border)">Agreement Value</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Agreement Value</td></tr>
+                  </tbody>
+                </table>
+                <div style="background:var(--goldl);border:1px solid var(--goldb);border-radius:8px;padding:12px 14px;font-size:12.5px;color:var(--gold);line-height:1.8">
+                  <strong>✅ Import these 3 sheets only:</strong><br>
+                  1. <strong>BWxSOTR</strong> → Bookings<br>
+                  2. <strong>Cheque details</strong> → Cheques<br>
+                  3. <strong>Previous Team Bookings</strong> → Prev Team<br><br>
+                  <strong>⏭ Skip these sheets:</strong> Summary, Sheet1, Sheet2, Sheet3, Sheet4
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div id="imp-s1">
+        <div class="card" style="max-width:620px">
+          <div class="card-hd"><span class="card-hd-title">Step 1 — Select Project & Upload File</span></div>      <div id="imp-s1">
         <div class="card" style="max-width:620px">
           <div class="card-hd"><span class="card-hd-title">Step 1 — Select Project & Upload File</span></div>
           <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
@@ -193,7 +280,15 @@
         <div class="frow">
           <input type="text" id="bk-s" placeholder="🔍 Name, plot, contact…" oninput="renderBookings()" style="width:210px">
           <select id="bk-bank" onchange="renderBookings()"><option value="">All Banks</option><option>HDFC</option><option>IDBI</option><option>Axis</option><option>ICICI</option><option>SBI</option><option>Self</option><option>Tata Capital</option><option>Other</option></select>
-          <select id="bk-sts" onchange="renderBookings()"><option value="">All Statuses</option><option>File Given</option><option>Under Process</option><option>Sanction Received</option><option>Disbursement Done</option><option>Agreement Completed</option><option>Cancelled</option></select>
+          <select id="bk-sts" onchange="renderBookings()">
+            <option value="">All Statuses</option>
+            <option value="File Given">File Given</option>
+            <option value="Under Process">Under Process</option>
+            <option value="Sanction Received">Sanction Received</option>
+            <option value="Disbursement Done">Disbursement Done</option>
+            <option value="Agreement Completed">Agreement Completed</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
           <select id="bk-dis" onchange="renderBookings()"><option value="">Disbursement</option><option>Done</option><option>Pending</option></select>
           <button class="btn btn-ghost btn-sm" onclick="clearBkF()">✕</button>
           <span class="fcount" id="bkCnt"></span>
@@ -394,7 +489,16 @@
         <div class="fsec">Banking & Loan</div>
         <div class="fg"><label>Bank Name</label><select id="f-bank"><option>HDFC</option><option>IDBI</option><option>Axis</option><option>ICICI</option><option>SBI</option><option>Self</option><option>Tata Capital</option><option>Phase 2</option><option>Other</option></select></div>
         <div class="fg"><label>Banker Contact</label><input type="text" id="f-bankercont"></div>
-        <div class="fg"><label>Loan Status</label><select id="f-status"><option>File Given</option><option>Under Process</option><option>Sanction Received</option><option>Disbursement Done</option><option>Agreement Completed</option><option>Cancelled</option></select></div>
+        <div class="fg"><label>Loan Status</label>
+          <select id="f-status">
+            <option value="File Given">📁 File Given</option>
+            <option value="Under Process">🔄 Under Process</option>
+            <option value="Sanction Received">🏦 Sanction Received</option>
+            <option value="Disbursement Done">💸 Disbursement Done</option>
+            <option value="Agreement Completed">✅ Agreement Completed</option>
+            <option value="Cancelled">❌ Cancelled</option>
+          </select>
+        </div>
         <div class="fg"><label>Sanction Received</label><select id="f-sancrecv"><option value="">—</option><option>Yes</option><option>No</option></select></div>
         <div class="fg"><label>Sanction Date</label><input type="date" id="f-sancdate"></div>
         <div class="fg"><label>Sanction Letter</label><select id="f-sancletter"><option value="">—</option><option>Received</option><option>Pending</option></select></div>

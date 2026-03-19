@@ -74,7 +74,8 @@ async function boot(authUser) {
     el('app').classList.add('on');
     if (prof.role === 'superadmin') {
       buildNav('superadmin');
-      await renderSAProj(); goPage('p-sa-proj');
+      goPage('p-sa-proj');
+      renderSAProj(); // don't await - show page immediately
     } else {
       await loadMyProjects();
       buildNav(prof.role);
@@ -111,9 +112,20 @@ async function doLogin() {
   const email = v('li-email').trim(), pass = v('li-pass');
   if (!email||!pass) { showLoginErr('Email and password required'); return; }
   setBtn('loginBtn',true); hideLoginErr();
-  const { error } = await sb.auth.signInWithPassword({ email, password:pass });
+  try {
+    const { data, error } = await sb.auth.signInWithPassword({ email, password:pass });
+    if (error) {
+      setBtn('loginBtn',false);
+      showLoginErr(error.message);
+      return;
+    }
+    // boot is triggered by onAuthStateChange, but also call directly
+    if (data?.user && !S.user) await boot(data.user);
+  } catch(e) {
+    setBtn('loginBtn',false);
+    showLoginErr('Connection error: ' + e.message);
+  }
   setBtn('loginBtn',false);
-  if (error) showLoginErr(error.message);
 }
 async function doLogout() { await sb.auth.signOut(); }
 
@@ -1049,6 +1061,22 @@ const COL_DEFS = {
 
 function autoMapCols(headers,type) {
   const cols={};
+  // Hardcoded perfect mapping for SOTR BWxSOTR sheet (38 columns, exact header match)
+  const isSOTR = headers.length >= 30 && 
+    String(headers[2]||'').trim() === 'Name' && 
+    String(headers[4]||'').trim().startsWith('Plot No');
+  if (type === 'bookings' && isSOTR) {
+    return {
+      serial_no:0, booking_date:1, client_name:2, contact:3,
+      plot_no:4, plot_size:5, basic_rate:6, infra:7,
+      agreement_value:10, sdr:11, sdr_minus:12, maintenance:13, legal_charges:14,
+      loan_status:18, bank_name:21,
+      sdr_received:28, sdr_received_date:29,
+      sanction_received:30, sanction_date:31, sanction_letter:32,
+      banker_contact:33, disbursement_status:34, disbursement_date:35,
+      remark:36, doc_submitted:37
+    };
+  }
   const n=h=>String(h||'').toLowerCase().replace(/[\n\r\t]+/g,' ').replace(/\s+/g,' ').trim();
   headers.forEach((h,idx)=>{
     const hn=n(h); if(!hn) return;

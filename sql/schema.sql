@@ -108,7 +108,7 @@ create table if not exists public.cheques (
   amount      numeric not null default 0,
   entry_type  text default 'RPM' check (entry_type in ('RPM','SM','NILL','cash','BOUNCE','Other')),
   custom_data jsonb default '{}'::jsonb,
-  created_by  uuid references public.profiles(id),
+  created_by  uuid,
   created_at  timestamptz default now()
 );
 

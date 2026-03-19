@@ -5,11 +5,12 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>RealtyFlow CRM</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏗</text></svg>">
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
+<!-- LOADER -->
 <div id="loader">
   <div class="ld-brand">
     <div class="ld-icon">🏗</div>
@@ -19,12 +20,16 @@
   </div>
 </div>
 <script>
-  window._lkill = setTimeout(function(){
-    document.getElementById('loader').style.display='none';
-    document.getElementById('loginWrap').style.display='flex';
-  }, 7000);
+  // Kill loader after 8s no matter what
+  window._lk = setTimeout(function(){
+    var l=document.getElementById('loader');
+    if(l) l.style.display='none';
+    var w=document.getElementById('loginWrap');
+    if(w) w.style.display='flex';
+  }, 8000);
 </script>
 
+<!-- LOGIN -->
 <div id="loginWrap" style="display:none">
   <div class="login-bg"></div><div class="login-grid"></div>
   <div class="login-card">
@@ -46,6 +51,7 @@
   </div>
 </div>
 
+<!-- APP -->
 <div id="app">
   <nav class="nav">
     <div class="nav-brand">
@@ -55,9 +61,9 @@
     <div class="nav-tabs" id="navTabs"></div>
     <div class="nav-right">
       <button class="back-btn" id="backBtn" onclick="backToProjects()">← All Projects</button>
-      <div class="proj-chip" id="projChip" onclick="openSwitcher()">
+      <div class="proj-chip" id="projChip" onclick="openSwitcher()" style="display:none">
         <div><div class="pc-name" id="pcName">—</div><div class="pc-role" id="pcRole">—</div></div>
-        <span style="color:rgba(255,255,255,.35);font-size:10px;">▼</span>
+        <span style="color:rgba(255,255,255,.3);font-size:10px">▼</span>
       </div>
       <div class="user-chip">
         <span class="uc-name" id="ucName">—</span>
@@ -66,12 +72,12 @@
       <button class="logout-btn" onclick="doLogout()">Logout</button>
     </div>
   </nav>
-
   <div class="content">
 
     <!-- SA: PROJECTS -->
     <div class="page" id="p-sa-proj">
-      <div class="ph"><div><h1>All Projects</h1><p>Manage every real estate project on the platform</p></div>
+      <div class="ph">
+        <div><h1>All Projects</h1><p>Manage every project on the platform</p></div>
         <div class="ph-r"><button class="btn btn-gold" onclick="openProjModal()">＋ New Project</button></div>
       </div>
       <div class="proj-grid" id="saGrid"></div>
@@ -79,115 +85,29 @@
 
     <!-- SA: USERS -->
     <div class="page" id="p-sa-users">
-      <div class="ph"><div><h1>Platform Users</h1><p>All users across every project</p></div>
-        <div class="ph-r"><button class="btn btn-gold" onclick="openUserModal()">＋ Add User</button></div>
+      <div class="ph">
+        <div><h1>Platform Users</h1><p>All users across every project</p></div>
+        <div class="ph-r"><button class="btn btn-gold" onclick="openUserModal(null)">＋ Add User</button></div>
       </div>
-      <div class="card"><div class="users-list" id="saUsersList"></div></div>
+      <div class="card"><div class="users-list" id="saUsersList"><div class="lc"><div class="spin spin-dk"></div></div></div></div>
     </div>
 
     <!-- SA: IMPORT -->
     <div class="page" id="p-sa-import">
-      <div class="ph"><div><h1>Import from Excel</h1><p>Upload an existing workbook and map columns to import data into a project</p></div></div>
-      <!-- Mapping Reference Guide -->
-      <div class="card" style="margin-bottom:18px">
-        <div class="card-hd">
-          <span class="card-hd-title">📋 Excel Column Mapping Reference</span>
-          <button class="btn btn-ghost btn-sm" onclick="var g=el('mappingGuide');g.style.display=g.style.display==='none'?'':' none'">Toggle ▾</button>
-        </div>
-        <div id="mappingGuide" style="display:none">
-          <div class="card-body">
-            <p style="font-size:13px;color:var(--inkl);margin-bottom:16px">How your SOTR Excel columns map to CRM fields. The import auto-detects these — verify in Step 2 if needed. <strong>Only import BWxSOTR, Cheque details, and Previous Team Bookings. Skip all other sheets.</strong></p>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
-              <div>
-                <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--gold);margin-bottom:10px;padding-bottom:5px;border-bottom:1.5px solid var(--border)">BWxSOTR → Bookings</div>
-                <table style="width:100%;font-size:12px;border-collapse:collapse">
-                  <thead><tr><th style="padding:5px 8px;background:var(--paper);border:1px solid var(--border);text-align:left">Col</th><th style="padding:5px 8px;background:var(--paper);border:1px solid var(--border);text-align:left">Excel Header</th><th style="padding:5px 8px;background:var(--paper);border:1px solid var(--border);text-align:left">CRM Field</th></tr></thead>
-                  <tbody>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">A (0)</td><td style="padding:4px 8px;border:1px solid var(--border)">No</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Serial No.</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">B (1)</td><td style="padding:4px 8px;border:1px solid var(--border)">Date</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Booking Date</td></tr>
-                    <tr style="background:var(--goldl)"><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">C (2)</td><td style="padding:4px 8px;border:1px solid var(--border);font-weight:600">Name</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky);font-weight:600">Client Name ★</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">D (3)</td><td style="padding:4px 8px;border:1px solid var(--border)">Contact No</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Contact</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">E (4)</td><td style="padding:4px 8px;border:1px solid var(--border)">Plot No</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Plot No.</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">F (5)</td><td style="padding:4px 8px;border:1px solid var(--border)">Plot Size</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Plot Size (sqft)</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">G (6)</td><td style="padding:4px 8px;border:1px solid var(--border)">Basic Rate</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Basic Rate</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">H (7)</td><td style="padding:4px 8px;border:1px solid var(--border)">Infra</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Infra</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">K (10)</td><td style="padding:4px 8px;border:1px solid var(--border)">Agreement Value</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Agreement Value</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">L (11)</td><td style="padding:4px 8px;border:1px solid var(--border)">SDR</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">SDR</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">M (12)</td><td style="padding:4px 8px;border:1px solid var(--border)">SDR-</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">SDR-</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">N (13)</td><td style="padding:4px 8px;border:1px solid var(--border)">Maintenance</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Maintenance</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">O (14)</td><td style="padding:4px 8px;border:1px solid var(--border)">Legal Charges</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Legal Charges</td></tr>
-                    <tr style="background:var(--skyl)"><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">S (18)</td><td style="padding:4px 8px;border:1px solid var(--border);font-weight:600">Agreement Status</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky);font-weight:600">Loan Status ★★</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">V (21)</td><td style="padding:4px 8px;border:1px solid var(--border)">Bank (HDFC/AXIS…)</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Bank Name</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AC (28)</td><td style="padding:4px 8px;border:1px solid var(--border)">SDR Received</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">SDR Received</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AD (29)</td><td style="padding:4px 8px;border:1px solid var(--border)">SDR Received Date</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">SDR Recv. Date</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AE (30)</td><td style="padding:4px 8px;border:1px solid var(--border)">Sanction Received (Yes/No)</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Sanction Received</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AF (31)</td><td style="padding:4px 8px;border:1px solid var(--border)">Sanction Received on Date</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Sanction Date</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AG (32)</td><td style="padding:4px 8px;border:1px solid var(--border)">Sanction Letter</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Sanction Letter</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AH (33)</td><td style="padding:4px 8px;border:1px solid var(--border)">Banker Contact</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Banker Contact</td></tr>
-                    <tr style="background:var(--skyl)"><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AI (34)</td><td style="padding:4px 8px;border:1px solid var(--border);font-weight:600">Disbursement Status</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky);font-weight:600">Disbursement Status ★★</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AJ (35)</td><td style="padding:4px 8px;border:1px solid var(--border)">Disbursement Done on Date</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Disbursement Date</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AK (36)</td><td style="padding:4px 8px;border:1px solid var(--border)">Remark</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Remark</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">AL (37)</td><td style="padding:4px 8px;border:1px solid var(--border)">Document submitted to draft</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Doc Submitted</td></tr>
-                  </tbody>
-                </table>
-                <div style="margin-top:10px;background:var(--skyl);border-radius:7px;padding:10px 12px;font-size:12px;color:var(--sky);line-height:1.7">
-                  <strong>★★ Key mappings:</strong><br>
-                  • <strong>Agreement Status (col S)</strong> = "done" → Agreement Completed<br>
-                  • <strong>Disbursement Status (col AI)</strong> = "done" → Disbursement Done; everything else → saved as Banker Remark
-                </div>
-              </div>
-              <div>
-                <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--gold);margin-bottom:10px;padding-bottom:5px;border-bottom:1.5px solid var(--border)">Cheque details → Cheques</div>
-                <table style="width:100%;font-size:12px;border-collapse:collapse;margin-bottom:18px">
-                  <thead><tr><th style="padding:5px 8px;background:var(--paper);border:1px solid var(--border);text-align:left">Col</th><th style="padding:5px 8px;background:var(--paper);border:1px solid var(--border);text-align:left">Excel Header</th><th style="padding:5px 8px;background:var(--paper);border:1px solid var(--border);text-align:left">CRM Field</th></tr></thead>
-                  <tbody>
-                    <tr style="background:var(--goldl)"><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">A (0)</td><td style="padding:4px 8px;border:1px solid var(--border);font-weight:600">CUST NAME</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky);font-weight:600">Customer Name ★</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">B (1)</td><td style="padding:4px 8px;border:1px solid var(--border)">PLOT NO</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Plot No.</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">C (2)</td><td style="padding:4px 8px;border:1px solid var(--border)">BANK DETAIL</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Bank Detail</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">D (3)</td><td style="padding:4px 8px;border:1px solid var(--border)">CHQ NO</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Cheque/Ref No.</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">E (4)</td><td style="padding:4px 8px;border:1px solid var(--border)">CHQ DATE</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Date</td></tr>
-                    <tr style="background:var(--goldl)"><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">F (5)</td><td style="padding:4px 8px;border:1px solid var(--border);font-weight:600">AMOUNT</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky);font-weight:600">Amount ★</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">G (6)</td><td style="padding:4px 8px;border:1px solid var(--border)">REMARK</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Type (RPM/SM)</td></tr>
-                  </tbody>
-                </table>
-                <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--gold);margin-bottom:10px;padding-bottom:5px;border-bottom:1.5px solid var(--border)">Previous Team Bookings → Prev Team</div>
-                <table style="width:100%;font-size:12px;border-collapse:collapse;margin-bottom:18px">
-                  <thead><tr><th style="padding:5px 8px;background:var(--paper);border:1px solid var(--border);text-align:left">Col</th><th style="padding:5px 8px;background:var(--paper);border:1px solid var(--border);text-align:left">Excel Header</th><th style="padding:5px 8px;background:var(--paper);border:1px solid var(--border);text-align:left">CRM Field</th></tr></thead>
-                  <tbody>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">A (0)</td><td style="padding:4px 8px;border:1px solid var(--border)">Customer Name</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Customer Name ★</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">B (1)</td><td style="padding:4px 8px;border:1px solid var(--border)">Plot Number</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Plot No.</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">C (2)</td><td style="padding:4px 8px;border:1px solid var(--border)">Plot Size</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Plot Size</td></tr>
-                    <tr><td style="padding:4px 8px;border:1px solid var(--border);color:var(--inkf)">D (3)</td><td style="padding:4px 8px;border:1px solid var(--border)">Agreement Value</td><td style="padding:4px 8px;border:1px solid var(--border);color:var(--sky)">Agreement Value</td></tr>
-                  </tbody>
-                </table>
-                <div style="background:var(--goldl);border:1px solid var(--goldb);border-radius:8px;padding:12px 14px;font-size:12.5px;color:var(--gold);line-height:1.8">
-                  <strong>✅ Import these 3 sheets only:</strong><br>
-                  1. <strong>BWxSOTR</strong> → Bookings<br>
-                  2. <strong>Cheque details</strong> → Cheques<br>
-                  3. <strong>Previous Team Bookings</strong> → Prev Team<br><br>
-                  <strong>⏭ Skip these sheets:</strong> Summary, Sheet1, Sheet2, Sheet3, Sheet4
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
+      <div class="ph"><div><h1>Import from Excel</h1><p>Upload a workbook and map columns to import data into a project</p></div></div>
       <div id="imp-s1">
         <div class="card" style="max-width:620px">
-          <div class="card-hd"><span class="card-hd-title">Step 1 — Select Project & Upload File</span></div>      <div id="imp-s1">
-        <div class="card" style="max-width:620px">
-          <div class="card-hd"><span class="card-hd-title">Step 1 — Select Project & Upload File</span></div>
+          <div class="card-hd"><span class="card-hd-title">Step 1 — Select Project & File</span></div>
           <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
             <div class="fg"><label>Target Project *</label><select id="imp-proj"><option value="">— Select Project —</option></select></div>
-            <div class="fg"><label>Excel File (.xlsx, .xls)</label>
+            <div class="fg"><label>Excel File (.xlsx)</label>
               <div class="drop-zone" id="dropZone" onclick="el('imp-file').click()"
                 ondragover="event.preventDefault();this.classList.add('drag-over')"
                 ondragleave="this.classList.remove('drag-over')"
                 ondrop="event.preventDefault();this.classList.remove('drag-over');el('imp-file').files=event.dataTransfer.files;onFileChange(el('imp-file'))">
                 <div style="font-size:32px;margin-bottom:8px">📊</div>
                 <div style="font-weight:600;font-size:14px;margin-bottom:3px">Click to upload or drag & drop</div>
-                <div style="font-size:12px;color:var(--inkf)">.xlsx and .xls files supported</div>
+                <div style="font-size:12px;color:var(--inkf)">.xlsx and .xls files</div>
                 <div id="imp-fname" style="margin-top:8px;font-size:13px;color:var(--gold);font-weight:500"></div>
               </div>
               <input type="file" id="imp-file" accept=".xlsx,.xls" style="display:none" onchange="onFileChange(this)">
@@ -199,13 +119,13 @@
       <div id="imp-s2" style="display:none">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
           <div><h2 style="font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:700">Step 2 — Map Columns</h2>
-            <p style="font-size:12px;color:var(--inkf);margin-top:2px">For each sheet, choose what it contains and map Excel columns to CRM fields. Auto-detected where possible.</p></div>
-          <div style="display:flex;gap:9px"><button class="btn btn-outline" onclick="resetImport()">← Back</button><button class="btn btn-gold" onclick="previewImport()">Next: Preview →</button></div>
+            <p style="font-size:12px;color:var(--inkf);margin-top:2px">Choose what each sheet contains and map columns. Auto-detected for SOTR format.</p></div>
+          <div style="display:flex;gap:9px"><button class="btn btn-outline" onclick="resetImport()">← Back</button><button class="btn btn-gold" onclick="previewImport()">Preview →</button></div>
         </div>
         <div id="sheetMaps"></div>
         <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:14px">
           <button class="btn btn-outline" onclick="resetImport()">← Back</button>
-          <button class="btn btn-gold" onclick="previewImport()">Next: Preview →</button>
+          <button class="btn btn-gold" onclick="previewImport()">Preview →</button>
         </div>
       </div>
       <div id="imp-s3" style="display:none">
@@ -213,10 +133,9 @@
           <div class="card-hd"><span class="card-hd-title">Step 3 — Confirm Import</span></div>
           <div class="card-body">
             <div id="imp-summary"></div>
-            <div style="margin:14px 0;padding:14px 16px;background:var(--goldl);border:1px solid var(--goldb);border-radius:8px;display:flex;align-items:center;gap:12px">
+            <div style="margin:14px 0;padding:14px;background:var(--goldl);border:1px solid var(--goldb);border-radius:8px;display:flex;align-items:center;gap:12px">
               <span style="font-size:22px">📥</span>
-              <div><div style="font-weight:600">Ready to import <span id="imp-total">0</span> records</div>
-                <div style="font-size:12px;color:var(--inkl)">Existing data will not be deleted.</div></div>
+              <div><strong>Ready to import <span id="imp-total">0</span> records</strong><br><span style="font-size:12px;color:var(--inkl)">Existing data will NOT be deleted.</span></div>
             </div>
             <div id="imp-progress" style="display:none;margin-bottom:14px">
               <div id="imp-prog-text" style="font-size:13px;color:var(--inkl);margin-bottom:6px"></div>
@@ -224,17 +143,17 @@
             </div>
             <div style="display:flex;gap:9px">
               <button class="btn btn-outline" onclick="el('imp-s2').style.display='';el('imp-s3').style.display='none'">← Back</button>
-              <button class="btn btn-gold" id="imp-confirm" onclick="runImport()">🚀 Run Import</button>
+              <button class="btn btn-gold" id="imp-confirm" onclick="runImport()" disabled>🚀 Run Import</button>
             </div>
           </div>
         </div>
       </div>
       <div id="imp-result" style="display:none">
         <div class="card" style="max-width:460px">
-          <div class="card-body" style="text-align:center;padding:28px">
+          <div class="card-body" style="text-align:center;padding:32px">
             <div style="font-size:44px;margin-bottom:14px">✅</div>
-            <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700;margin-bottom:5px"><span id="imp-ok">0</span> records imported</div>
-            <div style="font-size:13px;color:var(--inkf);margin-bottom:18px"><span id="imp-err">0</span> errors</div>
+            <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700;margin-bottom:5px"><span id="imp-ok">0</span> records imported</div>
+            <div style="font-size:13px;color:var(--inkf);margin-bottom:20px"><span id="imp-err">0</span> errors</div>
             <div style="display:flex;gap:9px;justify-content:center">
               <button class="btn btn-outline" onclick="resetImport()">Import Another</button>
               <button class="btn btn-gold" onclick="navigate('p-sa-proj')">View Projects →</button>
@@ -249,12 +168,12 @@
       <div class="ph">
         <div><h1 id="dashTitle">Dashboard</h1><p id="dashSub">Project overview</p></div>
         <div class="ph-r">
-          <button class="btn btn-outline" onclick="downloadProjectExcel()" title="Download all project data as Excel">⬇ Download Excel</button>
+          <button class="btn btn-outline btn-sm" onclick="downloadProjectExcel()">⬇ Download Excel</button>
           <button class="btn btn-gold" id="dashNewBk" style="display:none" onclick="openBkModal()">＋ New Booking</button>
         </div>
       </div>
       <div class="stats-row" id="dashStats"></div>
-      <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:18px">
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px">
         <div class="card">
           <div class="card-hd"><span class="card-hd-title">Recent Bookings</span><button class="btn btn-ghost btn-sm" onclick="navigate('p-bookings')">View All →</button></div>
           <div class="tw"><table><thead><tr><th>Client</th><th>Plot</th><th>Value</th><th>Bank</th><th>Status</th></tr></thead><tbody id="dashRecent"></tbody></table></div>
@@ -270,7 +189,7 @@
     <!-- BOOKINGS -->
     <div class="page" id="p-bookings">
       <div class="ph">
-        <div><h1>Bookings Register</h1><p>All plot bookings for this project</p></div>
+        <div><h1>Bookings Register</h1><p>All plot bookings</p></div>
         <div class="ph-r">
           <button class="btn btn-outline btn-sm" onclick="dlCSV('bookings')">⬇ CSV</button>
           <button class="btn btn-gold" id="bkNewBtn" style="display:none" onclick="openBkModal()">＋ New Booking</button>
@@ -278,19 +197,11 @@
       </div>
       <div class="card">
         <div class="frow">
-          <input type="text" id="bk-s" placeholder="🔍 Name, plot, contact…" oninput="renderBookings()" style="width:210px">
-          <select id="bk-bank" onchange="renderBookings()"><option value="">All Banks</option><option>HDFC</option><option>IDBI</option><option>Axis</option><option>ICICI</option><option>SBI</option><option>Self</option><option>Tata Capital</option><option>Other</option></select>
-          <select id="bk-sts" onchange="renderBookings()">
-            <option value="">All Statuses</option>
-            <option value="File Given">File Given</option>
-            <option value="Under Process">Under Process</option>
-            <option value="Sanction Received">Sanction Received</option>
-            <option value="Disbursement Done">Disbursement Done</option>
-            <option value="Agreement Completed">Agreement Completed</option>
-            <option value="Cancelled">Cancelled</option>
-          </select>
-          <select id="bk-dis" onchange="renderBookings()"><option value="">Disbursement</option><option>Done</option><option>Pending</option></select>
-          <button class="btn btn-ghost btn-sm" onclick="clearBkF()">✕</button>
+          <input type="text" id="bk-s" placeholder="🔍 Name, plot, contact…" oninput="renderBookings()" style="width:200px">
+          <select id="bk-bank" onchange="renderBookings()"><option value="">All Banks</option><option>HDFC</option><option>IDBI</option><option>Axis</option><option>ICICI</option><option>SBI</option><option>Self</option><option>Tata Capital</option><option>Phase 2</option><option>Other</option></select>
+          <select id="bk-sts" onchange="renderBookings()"><option value="">All Statuses</option><option>File Given</option><option>Under Process</option><option>Sanction Received</option><option>Disbursement Done</option><option>Agreement Completed</option><option>Cancelled</option></select>
+          <select id="bk-dis" onchange="renderBookings()"><option value="">Disbursement</option><option value="done">Done</option><option value="pending">Pending</option></select>
+          <button class="btn btn-ghost btn-sm" onclick="clearBkF()">✕ Clear</button>
           <span class="fcount" id="bkCnt"></span>
         </div>
         <div class="tw"><table><thead id="bkHead"></thead><tbody id="bkBody"></tbody></table></div>
@@ -316,8 +227,8 @@
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px" id="chqSummary"></div>
       <div class="card">
         <div class="frow">
-          <input type="text" id="chq-s" placeholder="🔍 Customer, cheque no…" oninput="renderCheques()" style="width:210px">
-          <select id="chq-t" onchange="renderCheques()"><option value="">All Types</option><option>RPM</option><option>SM</option><option>cash</option><option>BOUNCE</option><option>NILL</option></select>
+          <input type="text" id="chq-s" placeholder="🔍 Customer, cheque…" oninput="renderCheques()" style="width:200px">
+          <select id="chq-t" onchange="renderCheques()"><option value="">All Types</option><option>RPM</option><option>SM</option><option>cash</option><option>BOUNCE</option><option>NILL</option><option>Other</option></select>
         </div>
         <div class="tw"><table><thead id="chqHead"></thead><tbody id="chqBody"></tbody></table></div>
       </div>
@@ -329,46 +240,44 @@
         <div><h1>Previous Team Bookings</h1><p>Legacy records from prior team</p></div>
         <div class="ph-r">
           <button class="btn btn-outline btn-sm" onclick="dlCSV('prev')">⬇ CSV</button>
-          <button class="btn btn-outline btn-sm" id="prevNewBtn" style="display:none" onclick="openPrevModal()">＋ Add Entry</button>
+          <button class="btn btn-outline btn-sm" id="prevNewBtn" style="display:none" onclick="openPrevModal()">＋ Add Record</button>
         </div>
       </div>
-      <div class="card"><div class="tw"><table><thead><tr><th>#</th><th>Customer</th><th>Plot No.</th><th>Size (sqft)</th><th>Agr. Value</th><th>Notes</th><th>Actions</th></tr></thead><tbody id="prevBody"></tbody></table></div></div>
+      <div class="card"><div class="tw"><table><thead><tr><th>#</th><th>Customer</th><th>Plot No.</th><th>Size (sqft)</th><th>Agr. Value</th><th>Notes</th><th></th></tr></thead><tbody id="prevBody"></tbody></table></div></div>
     </div>
 
     <!-- ANALYTICS -->
     <div class="page" id="p-analytics">
       <div class="ph">
-        <div><h1>Analytics & Reports</h1><p>Visual summaries — download charts as PNG or data as CSV</p></div>
-        <div class="ph-r">
-          <button class="btn btn-outline btn-sm" onclick="downloadProjectExcel()">⬇ Full Excel Export</button>
-        </div>
+        <div><h1>Analytics & Reports</h1><p>Visual summaries — click charts to download as PNG</p></div>
+        <div class="ph-r"><button class="btn btn-outline btn-sm" onclick="downloadProjectExcel()">⬇ Full Excel Export</button></div>
       </div>
       <div class="stats-row" id="analStats" style="margin-bottom:20px"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-        <div class="card"><div class="card-hd"><span class="card-hd-title">Loan Status Distribution</span><button class="dl-btn" onclick="dlChart('c-status','loan_status')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-status"></canvas></div></div></div>
-        <div class="card"><div class="card-hd"><span class="card-hd-title">Bank-wise Bookings</span><button class="dl-btn" onclick="dlChart('c-bank','bank_bookings')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-bank"></canvas></div></div></div>
+        <div class="card"><div class="card-hd"><span class="card-hd-title">Loan Status Distribution</span><button class="dl-btn" onclick="dlChart('c-status')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-status"></canvas></div></div></div>
+        <div class="card"><div class="card-hd"><span class="card-hd-title">Bank-wise Bookings</span><button class="dl-btn" onclick="dlChart('c-bank')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-bank"></canvas></div></div></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-        <div class="card"><div class="card-hd"><span class="card-hd-title">Monthly Booking Trend</span><button class="dl-btn" onclick="dlChart('c-monthly','monthly_trend')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap" style="height:280px"><canvas id="c-monthly"></canvas></div></div></div>
-        <div class="card"><div class="card-hd"><span class="card-hd-title">Agreement Value by Bank (₹L)</span><button class="dl-btn" onclick="dlChart('c-value','value_by_bank')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap" style="height:280px"><canvas id="c-value"></canvas></div></div></div>
+        <div class="card"><div class="card-hd"><span class="card-hd-title">Monthly Booking Trend</span><button class="dl-btn" onclick="dlChart('c-monthly')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-monthly"></canvas></div></div></div>
+        <div class="card"><div class="card-hd"><span class="card-hd-title">Agreement Value by Bank (₹L)</span><button class="dl-btn" onclick="dlChart('c-value')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-value"></canvas></div></div></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-        <div class="card"><div class="card-hd"><span class="card-hd-title">Disbursement Status</span><button class="dl-btn" onclick="dlChart('c-disb','disbursement')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-disb"></canvas></div></div></div>
-        <div class="card"><div class="card-hd"><span class="card-hd-title">Collections by Type (₹L)</span><button class="dl-btn" onclick="dlChart('c-pay','collections')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-pay"></canvas></div></div></div>
+        <div class="card"><div class="card-hd"><span class="card-hd-title">Disbursement Status</span><button class="dl-btn" onclick="dlChart('c-disb')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-disb"></canvas></div></div></div>
+        <div class="card"><div class="card-hd"><span class="card-hd-title">Collections by Type (₹L)</span><button class="dl-btn" onclick="dlChart('c-pay')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-pay"></canvas></div></div></div>
       </div>
     </div>
 
     <!-- SETTINGS -->
     <div class="page" id="p-settings">
-      <div class="ph"><div><h1>Project Settings</h1><p>Configure details, users and custom fields</p></div></div>
+      <div class="ph"><div><h1>Project Settings</h1><p>Details, users, custom fields</p></div></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
         <div>
           <div class="card" style="margin-bottom:18px">
             <div class="card-hd"><span class="card-hd-title">Project Details</span></div>
-            <div class="card-body" style="display:flex;flex-direction:column;gap:13px">
+            <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
               <div class="fg"><label>Project Name</label><input type="text" id="set-name"></div>
               <div class="fg"><label>Location</label><input type="text" id="set-loc"></div>
-              <div class="fg"><label>Developer / Builder</label><input type="text" id="set-dev"></div>
+              <div class="fg"><label>Developer</label><input type="text" id="set-dev"></div>
               <div class="fg"><label>RERA Number</label><input type="text" id="set-rera"></div>
               <div class="fg"><label>Total Plots</label><input type="number" id="set-plots"></div>
               <div class="form3">
@@ -381,14 +290,11 @@
           </div>
           <div class="card">
             <div class="card-hd"><span class="card-hd-title">Custom Fields</span><button class="btn btn-gold btn-sm" onclick="openCFModal()">＋ Add Field</button></div>
-            <div class="card-body">
-              <p style="font-size:12px;color:var(--inkf);margin-bottom:12px">Add project-specific fields that appear in Booking or Cheque forms.</p>
-              <div id="cfList"></div>
-            </div>
+            <div class="card-body"><p style="font-size:12px;color:var(--inkf);margin-bottom:12px">Project-specific fields in Booking or Cheque forms.</p><div id="cfList"></div></div>
           </div>
         </div>
         <div class="card">
-          <div class="card-hd"><span class="card-hd-title">Project Users</span><button class="btn btn-gold btn-sm" onclick="openUserModal(true)">＋ Add User</button></div>
+          <div class="card-hd"><span class="card-hd-title">Project Users</span><button class="btn btn-gold btn-sm" onclick="openUserModal(S.curProj?.id)">＋ Add User</button></div>
           <div class="users-list" id="projUsers"></div>
         </div>
       </div>
@@ -397,34 +303,35 @@
   </div>
 </div>
 
-<!-- ════ MODALS ════ -->
+<!-- ═══ MODALS ═══ -->
 
 <!-- Project Modal -->
 <div class="overlay" id="projModal">
   <div class="modal modal-lg">
-    <div class="mhd"><div><div class="mhd-title" id="projMTitle">New Project</div><div class="mhd-sub">Create project and provision user accounts</div></div><button class="mclose" onclick="closeM('projModal')">✕</button></div>
+    <div class="mhd"><div><div class="mhd-title" id="projMTitle">New Project</div><div class="mhd-sub" id="projMSub">Create project and provision user accounts</div></div><button class="mclose" onclick="closeM('projModal')">✕</button></div>
     <div class="mbody">
       <div class="form2">
         <div class="fsec">Project Details</div>
-        <div class="fg full"><label>Project Name *</label><input type="text" id="pm-name" placeholder="e.g. Song of the River"></div>
-        <div class="fg"><label>Location *</label><input type="text" id="pm-loc" placeholder="Pune, Maharashtra"></div>
-        <div class="fg"><label>Developer / Builder</label><input type="text" id="pm-dev"></div>
+        <div class="fg full"><label>Project Name *</label><input type="text" id="pm-name"></div>
+        <div class="fg"><label>Location</label><input type="text" id="pm-loc"></div>
+        <div class="fg"><label>Developer</label><input type="text" id="pm-dev"></div>
         <div class="fg"><label>RERA Number</label><input type="text" id="pm-rera"></div>
         <div class="fg"><label>Total Plots</label><input type="number" id="pm-plots" value="100"></div>
         <div class="fg"><label>Launch Date</label><input type="date" id="pm-launch"></div>
-        <div class="fsec">Default Financials</div>
-        <div class="fg"><label>Infra Charge (₹/sqft)</label><input type="number" id="pm-infra" value="100"></div>
-        <div class="fg"><label>Legal Charges (₹)</label><input type="number" id="pm-legal" value="25000"></div>
+        <div class="fg"><label>Infra (₹/sqft)</label><input type="number" id="pm-infra" value="100"></div>
+        <div class="fg"><label>Legal (₹)</label><input type="number" id="pm-legal" value="25000"></div>
         <div class="fg"><label>SDR Rate (%)</label><input type="number" id="pm-sdr" value="6" step="0.1"></div>
-        <div class="fg"><label>Default Maintenance (₹)</label><input type="number" id="pm-maint" value="0"></div>
-        <div class="fsec">Project Admin *</div>
-        <div class="fg"><label>Full Name *</label><input type="text" id="pm-aname" placeholder="Rajesh Sharma"></div>
-        <div class="fg"><label>Email *</label><input type="email" id="pm-amail" placeholder="admin@company.com"></div>
-        <div class="fg full"><label>Password * (min 8 chars)</label><input type="password" id="pm-apass"></div>
-        <div class="fsec">Sales Login (Optional)</div>
-        <div class="fg"><label>Full Name</label><input type="text" id="pm-sname"></div>
-        <div class="fg"><label>Email</label><input type="email" id="pm-smail"></div>
-        <div class="fg full"><label>Password (min 8 chars)</label><input type="password" id="pm-spass"></div>
+        <div class="fg"><label>Maintenance (₹)</label><input type="number" id="pm-maint" value="0"></div>
+        <div id="pm-new-user-fields">
+          <div class="fsec">Project Admin *</div>
+          <div class="fg"><label>Full Name *</label><input type="text" id="pm-aname"></div>
+          <div class="fg"><label>Email *</label><input type="email" id="pm-amail"></div>
+          <div class="fg full"><label>Password * (min 8 chars)</label><input type="password" id="pm-apass"></div>
+          <div class="fsec">Sales User (Optional)</div>
+          <div class="fg"><label>Full Name</label><input type="text" id="pm-sname"></div>
+          <div class="fg"><label>Email</label><input type="email" id="pm-smail"></div>
+          <div class="fg full"><label>Password (min 8 chars)</label><input type="password" id="pm-spass"></div>
+        </div>
       </div>
     </div>
     <div class="mfoot"><button class="btn btn-outline" onclick="closeM('projModal')">Cancel</button><button class="btn btn-gold" id="pm-save" onclick="saveProject()">🏗 Create Project</button></div>
@@ -434,15 +341,15 @@
 <!-- User Modal -->
 <div class="overlay" id="userModal">
   <div class="modal modal-sm">
-    <div class="mhd"><div><div class="mhd-title" id="umTitle">Add User</div></div><button class="mclose" onclick="closeM('userModal')">✕</button></div>
-    <div class="mbody">
-      <div style="display:flex;flex-direction:column;gap:13px">
-        <div class="fg"><label>Full Name *</label><input type="text" id="um-name"></div>
-        <div class="fg"><label>Email *</label><input type="email" id="um-email"></div>
-        <div class="fg"><label>Password * (min 8 chars)</label><input type="password" id="um-pass"></div>
-        <div class="fg"><label>Role *</label><select id="um-role"><option value="admin">Project Admin</option><option value="sales">Sales</option></select></div>
-        <div class="fg" id="um-proj-g"><label>Assign to Project *</label><select id="um-proj"></select></div>
+    <div class="mhd"><div><div class="mhd-title" id="umTitle">Add User</div><div class="mhd-sub" id="umSub"></div></div><button class="mclose" onclick="closeM('userModal')">✕</button></div>
+    <div class="mbody" style="display:flex;flex-direction:column;gap:13px">
+      <div class="fg"><label>Full Name *</label><input type="text" id="um-name"></div>
+      <div class="fg"><label>Email *</label><input type="email" id="um-email"></div>
+      <div class="fg" id="um-pass-g"><label>Password * (min 8 chars)</label><input type="password" id="um-pass"></div>
+      <div class="fg"><label>Role *</label>
+        <select id="um-role"><option value="admin">Project Admin</option><option value="sales">Sales</option><option value="superadmin" id="um-sa-opt">Super Admin</option></select>
       </div>
+      <div class="fg" id="um-proj-g"><label>Assign to Project</label><select id="um-proj"><option value="">— None —</option></select></div>
     </div>
     <div class="mfoot"><button class="btn btn-outline" onclick="closeM('userModal')">Cancel</button><button class="btn btn-gold" id="um-save" onclick="saveUser()">Save User</button></div>
   </div>
@@ -452,12 +359,10 @@
 <div class="overlay" id="editUserModal">
   <div class="modal modal-sm">
     <div class="mhd"><div><div class="mhd-title">Edit User</div></div><button class="mclose" onclick="closeM('editUserModal')">✕</button></div>
-    <div class="mbody">
-      <div style="display:flex;flex-direction:column;gap:13px">
-        <div class="fg"><label>Full Name *</label><input type="text" id="eu-name"></div>
-        <div class="fg"><label>Role *</label><select id="eu-role"><option value="admin">Project Admin</option><option value="sales">Sales</option><option value="superadmin">Super Admin</option></select></div>
-        <div class="fg"><label>New Password (leave blank to keep current)</label><input type="password" id="eu-pass" placeholder="Leave blank to keep current"></div>
-      </div>
+    <div class="mbody" style="display:flex;flex-direction:column;gap:13px">
+      <div class="fg"><label>Full Name *</label><input type="text" id="eu-name"></div>
+      <div class="fg"><label>Role *</label><select id="eu-role"><option value="admin">Project Admin</option><option value="sales">Sales</option><option value="superadmin">Super Admin</option></select></div>
+      <div class="fg"><label>New Password (leave blank to keep current)</label><input type="password" id="eu-pass" placeholder="Leave blank to keep current"></div>
     </div>
     <div class="mfoot"><button class="btn btn-outline" onclick="closeM('editUserModal')">Cancel</button><button class="btn btn-gold" id="eu-save" onclick="saveEditUser()">Save Changes</button></div>
   </div>
@@ -469,12 +374,12 @@
     <div class="mhd"><div><div class="mhd-title" id="bkMTitle">New Booking</div><div class="mhd-sub" id="bkMSub">Add a plot booking</div></div><button class="mclose" onclick="closeM('bkModal')">✕</button></div>
     <div class="mbody">
       <div class="form2">
-        <div class="fsec">Client Information</div>
+        <div class="fsec">Client</div>
         <div class="fg"><label>Serial No.</label><input type="number" id="f-serial"></div>
         <div class="fg"><label>Booking Date</label><input type="date" id="f-date"></div>
         <div class="fg full"><label>Full Name *</label><input type="text" id="f-name"></div>
-        <div class="fg"><label>Contact Number</label><input type="text" id="f-contact"></div>
-        <div class="fsec">Plot Details</div>
+        <div class="fg full"><label>Contact Number</label><input type="text" id="f-contact"></div>
+        <div class="fsec">Plot & Financials</div>
         <div class="fg"><label>Plot No.</label><input type="text" id="f-plot"></div>
         <div class="fg"><label>Plot Size (sqft)</label><input type="number" id="f-size" oninput="calcBk()"></div>
         <div class="fg"><label>Basic Rate (₹/sqft)</label><input type="number" id="f-rate" oninput="calcBk()"></div>
@@ -487,7 +392,9 @@
         <div class="fg"><label>Maintenance (₹)</label><input type="number" id="f-maint"></div>
         <div class="fg"><label>Legal Charges (₹)</label><input type="number" id="f-legal"></div>
         <div class="fsec">Banking & Loan</div>
-        <div class="fg"><label>Bank Name</label><select id="f-bank"><option>HDFC</option><option>IDBI</option><option>Axis</option><option>ICICI</option><option>SBI</option><option>Self</option><option>Tata Capital</option><option>Phase 2</option><option>Other</option></select></div>
+        <div class="fg"><label>Bank Name</label>
+          <select id="f-bank"><option value="">— None —</option><option>HDFC</option><option>IDBI</option><option>Axis</option><option>ICICI</option><option>SBI</option><option>Tata Capital</option><option>Self</option><option>Phase 2</option><option>Other</option></select>
+        </div>
         <div class="fg"><label>Banker Contact</label><input type="text" id="f-bankercont"></div>
         <div class="fg"><label>Loan Status</label>
           <select id="f-status">
@@ -499,18 +406,18 @@
             <option value="Cancelled">❌ Cancelled</option>
           </select>
         </div>
-        <div class="fg"><label>Sanction Received</label><select id="f-sancrecv"><option value="">—</option><option>Yes</option><option>No</option></select></div>
+        <div class="fg"><label>Sanction Received</label><select id="f-sancrecv"><option value="">—</option><option value="Yes">Yes</option><option value="No">No</option></select></div>
         <div class="fg"><label>Sanction Date</label><input type="date" id="f-sancdate"></div>
-        <div class="fg"><label>Sanction Letter</label><select id="f-sancletter"><option value="">—</option><option>Received</option><option>Pending</option></select></div>
+        <div class="fg"><label>Sanction Letter</label><select id="f-sancletter"><option value="">—</option><option value="Received">Received</option><option value="Pending">Pending</option></select></div>
         <div class="fg"><label>SDR Received (₹)</label><input type="number" id="f-sdrrecv"></div>
         <div class="fg"><label>SDR Received Date</label><input type="date" id="f-sdrdate"></div>
-        <div class="fg"><label>Disbursement Status</label><select id="f-disbstatus"><option value="">Pending</option><option value="done">Done</option></select></div>
+        <div class="fg"><label>Disbursement Status</label><select id="f-disbstatus"><option value="">Pending</option><option value="done">Done ✓</option></select></div>
         <div class="fg"><label>Disbursement Date</label><input type="date" id="f-disbdate"></div>
         <div class="fg full"><label>Doc Submitted for Draft</label><input type="text" id="f-doc"></div>
         <div class="fsec">Remarks</div>
-        <div class="fg full"><label>Disbursement Remark</label><textarea id="f-disbremark"></textarea></div>
-        <div class="fg full"><label>General Remark</label><textarea id="f-remark"></textarea></div>
-        <div id="bk-cf" class="full" style="display:contents"></div>
+        <div class="fg full"><label>Disbursement Remark / Banker Note</label><textarea id="f-disbremark" rows="2"></textarea></div>
+        <div class="fg full"><label>General Remark</label><textarea id="f-remark" rows="2"></textarea></div>
+        <div id="bk-cf" style="display:contents"></div>
       </div>
     </div>
     <div class="mfoot"><button class="btn btn-outline" onclick="closeM('bkModal')">Cancel</button><button class="btn btn-gold" id="bk-save" onclick="saveBk()">💾 Save Booking</button></div>
@@ -520,7 +427,7 @@
 <!-- Detail Modal -->
 <div class="overlay" id="detailModal">
   <div class="modal modal-xl">
-    <div class="mhd"><div><div class="mhd-title" id="detailTitle">Booking Detail</div><div class="mhd-sub" id="detailSub"></div></div><button class="mclose" onclick="closeM('detailModal')">✕</button></div>
+    <div class="mhd"><div><div class="mhd-title" id="detailTitle"></div><div class="mhd-sub" id="detailSub"></div></div><button class="mclose" onclick="closeM('detailModal')">✕</button></div>
     <div class="mbody" id="detailBody"></div>
     <div class="mfoot"><button class="btn btn-outline" onclick="closeM('detailModal')">Close</button><button class="btn btn-gold" id="detailEdit" style="display:none">✏️ Edit</button></div>
   </div>
@@ -539,10 +446,10 @@
         <div class="fg"><label>Date</label><input type="date" id="c-date"></div>
         <div class="fg"><label>Amount (₹) *</label><input type="number" id="c-amount"></div>
         <div class="fg full"><label>Type</label><select id="c-type"><option>RPM</option><option>SM</option><option>NILL</option><option>cash</option><option>BOUNCE</option><option>Other</option></select></div>
-        <div id="chq-cf" class="full" style="display:contents"></div>
+        <div id="chq-cf" style="display:contents"></div>
       </div>
     </div>
-    <div class="mfoot"><button class="btn btn-outline" onclick="closeM('chqModal')">Cancel</button><button class="btn btn-gold" id="chq-save" onclick="saveChq()">💾 Save Entry</button></div>
+    <div class="mfoot"><button class="btn btn-outline" onclick="closeM('chqModal')">Cancel</button><button class="btn btn-gold" id="chq-save" onclick="saveChq()">💾 Save</button></div>
   </div>
 </div>
 
@@ -550,14 +457,12 @@
 <div class="overlay" id="prevModal">
   <div class="modal modal-sm">
     <div class="mhd"><div><div class="mhd-title">Add Previous Booking</div></div><button class="mclose" onclick="closeM('prevModal')">✕</button></div>
-    <div class="mbody">
-      <div style="display:flex;flex-direction:column;gap:13px">
-        <div class="fg"><label>Customer Name *</label><input type="text" id="pv-name"></div>
-        <div class="fg"><label>Plot No.</label><input type="text" id="pv-plot"></div>
-        <div class="fg"><label>Plot Size (sqft)</label><input type="number" id="pv-size"></div>
-        <div class="fg"><label>Agreement Value (₹)</label><input type="number" id="pv-val"></div>
-        <div class="fg"><label>Notes</label><textarea id="pv-notes" rows="2"></textarea></div>
-      </div>
+    <div class="mbody" style="display:flex;flex-direction:column;gap:12px">
+      <div class="fg"><label>Customer Name *</label><input type="text" id="pv-name"></div>
+      <div class="fg"><label>Plot No.</label><input type="text" id="pv-plot"></div>
+      <div class="fg"><label>Plot Size (sqft)</label><input type="number" id="pv-size"></div>
+      <div class="fg"><label>Agreement Value (₹)</label><input type="number" id="pv-val"></div>
+      <div class="fg"><label>Notes</label><textarea id="pv-notes" rows="2"></textarea></div>
     </div>
     <div class="mfoot"><button class="btn btn-outline" onclick="closeM('prevModal')">Cancel</button><button class="btn btn-gold" onclick="savePrev()">Save</button></div>
   </div>
@@ -567,15 +472,12 @@
 <div class="overlay" id="cfModal">
   <div class="modal modal-sm">
     <div class="mhd"><div><div class="mhd-title">Add Custom Field</div><div class="mhd-sub">Extends booking or cheque forms for this project</div></div><button class="mclose" onclick="closeM('cfModal')">✕</button></div>
-    <div class="mbody">
-      <div style="display:flex;flex-direction:column;gap:13px">
-        <div class="fg"><label>Display Label *</label><input type="text" id="cf-label" placeholder="e.g. Reference Name"></div>
-        <div class="fg"><label>Field Key (auto if blank)</label><input type="text" id="cf-key" placeholder="e.g. ref_name"></div>
-        <div class="fg"><label>Field Type *</label><select id="cf-type" onchange="el('cf-opts-g').style.display=this.value==='select'?'':'none'"><option value="text">Text</option><option value="number">Number</option><option value="date">Date</option><option value="select">Dropdown</option><option value="textarea">Text Area</option><option value="boolean">Yes / No</option></select></div>
-        <div class="fg" id="cf-opts-g" style="display:none"><label>Options (comma-separated)</label><input type="text" id="cf-opts" placeholder="Option A, Option B, Option C"></div>
-        <div class="fg"><label>Applies To</label><select id="cf-applies"><option value="booking">Booking</option><option value="cheque">Cheque / Payment</option></select></div>
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="cf-req" style="width:auto;margin:0"> Required field</label>
-      </div>
+    <div class="mbody" style="display:flex;flex-direction:column;gap:12px">
+      <div class="fg"><label>Display Label *</label><input type="text" id="cf-label" placeholder="e.g. Reference Name"></div>
+      <div class="fg"><label>Field Type *</label><select id="cf-type" onchange="el('cf-opts-g').style.display=this.value==='select'?'':'none'"><option value="text">Text</option><option value="number">Number</option><option value="date">Date</option><option value="select">Dropdown</option><option value="textarea">Text Area</option><option value="boolean">Yes / No</option></select></div>
+      <div class="fg" id="cf-opts-g" style="display:none"><label>Options (comma-separated)</label><input type="text" id="cf-opts" placeholder="Option A, Option B"></div>
+      <div class="fg"><label>Applies To</label><select id="cf-applies"><option value="booking">Booking</option><option value="cheque">Cheque</option></select></div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="cf-req" style="width:auto;margin:0"> Required field</label>
     </div>
     <div class="mfoot"><button class="btn btn-outline" onclick="closeM('cfModal')">Cancel</button><button class="btn btn-gold" onclick="saveCF()">Add Field</button></div>
   </div>
@@ -586,6 +488,20 @@
   <div class="modal modal-sm">
     <div class="mhd"><div><div class="mhd-title">Switch Project</div></div><button class="mclose" onclick="closeM('switcherModal')">✕</button></div>
     <div class="mbody" id="switcherList" style="padding:0"></div>
+  </div>
+</div>
+
+<!-- Clear Data Modal -->
+<div class="overlay" id="clearModal">
+  <div class="modal modal-sm">
+    <div class="mhd"><div><div class="mhd-title">Clear Project Data</div><div class="mhd-sub" style="color:var(--rose)">⚠️ This permanently deletes all records in this project</div></div><button class="mclose" onclick="closeM('clearModal')">✕</button></div>
+    <div class="mbody" style="display:flex;flex-direction:column;gap:14px">
+      <div class="info-box" style="background:var(--rosel);border-color:var(--rose);color:var(--rose)">
+        This will delete all <strong>Bookings</strong>, <strong>Cheques</strong>, and <strong>Previous Team</strong> records for project: <strong id="clear-proj-name"></strong>.<br><br>The project itself and its users will remain. Only the data is cleared.
+      </div>
+      <div class="fg"><label>Type the project name to confirm</label><input type="text" id="clear-confirm-input" placeholder="Type project name here"></div>
+    </div>
+    <div class="mfoot"><button class="btn btn-outline" onclick="closeM('clearModal')">Cancel</button><button class="btn btn-danger" id="clear-save" onclick="runClearData()">🗑 Clear All Data</button></div>
   </div>
 </div>
 

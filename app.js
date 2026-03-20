@@ -139,6 +139,23 @@ function detectSheetType(sheetName, headers) {
   if(nl.includes('prev')||nl.includes('previous')||nl.includes('team')) return 'prev';
   return 'skip';
 }
+// ── Loader Control ──
+function showLoader(show) {
+  const l = el('loader');
+  if (!l) return;
+  if (show) {
+    l.style.display = 'flex';
+    l.style.opacity = '1';
+    l.style.pointerEvents = 'auto';
+    clearTimeout(window._lk);
+  } else {
+    setTimeout(() => {
+      l.style.opacity = '0';
+      l.style.pointerEvents = 'none';
+      setTimeout(() => { if(l) l.style.display = 'none'; }, 200);
+    }, 100);
+  }
+}
 
 function getColMap(sheetName, headers, type) {
   if(type==='bookings' && headers.length>=38 && String(headers[2]||'').trim()==='Name') {

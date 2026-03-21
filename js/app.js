@@ -1377,10 +1377,26 @@ function csvRowToDb(r, type, projId){
 }
 
 function csvDate(v){
-  if(!v||v==='nan') return null;
+  if(!v||v==='nan'||v===''||v==='NaT') return null;
+  v = String(v).trim();
+  // Already YYYY-MM-DD
   if(/^\d{4}-\d{2}-\d{2}/.test(v)) return v.substring(0,10);
-  const m=v.match(/(\d{1,2})[.\/\-](\d{1,2})[.\/\-](\d{2,4})/);
-  if(m){const y=m[3].length===2?'20'+m[3]:m[3];return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;}
+  // DD.MM.YYYY or DD/MM/YYYY or DD-MM-YYYY  → always day first
+  const m = v.match(/^(\d{1,2})[.\/\-](\d{1,2})[.\/\-](\d{2,4})$/);
+  if(m){
+    const day = m[1].padStart(2,'0');
+    const mon = m[2].padStart(2,'0');
+    const yr  = m[3].length===2 ? '20'+m[3] : m[3];
+    // Validate: month must be 1-12, day must be 1-31
+    if(parseInt(mon)>12 || parseInt(day)>31) return null;
+    return `${yr}-${mon}-${day}`;
+  }
+  // Excel serial number (e.g. 45678)
+  const n = parseFloat(v);
+  if(!isNaN(n) && n > 40000 && n < 60000){
+    const d = new Date(Math.round((n - 25569) * 86400 * 1000));
+    return d.toISOString().substring(0,10);
+  }
   return null;
 }
 

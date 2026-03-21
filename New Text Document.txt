@@ -1,0 +1,6 @@
+plan and do these changes to our project 
+sales person  should be able to Add, edit or cancel any bookings
+Import CSV data
+and keep a trail log of whaterver the sales person does forever and it should be visible to projectadmin and superadmin. 
+and the trail log of projectadmin should be visible to superadmin .
+Super admin should be able to see overview of all projects on the dashboard at the same time . and if he goes in a specific project he can see that project's overview . also give options of viweing the data in different formats e.g bar graph pie charts line graph etc.

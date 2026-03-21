@@ -1148,6 +1148,28 @@ function onFileChange(input){
   el('imp-parse-btn').disabled=false;
 }
 
+// ── EXACT COLUMN INDEX MAPS (position-based, ignores header text) ──
+// Bookings: based on BWxSOTR exact column positions
+const BK_COLS = {
+  serial_no:0, booking_date:1, client_name:2, contact:3,
+  plot_no:4, plot_size:5, basic_rate:6, infra:7,
+  // col 8=basic amount (calculated), 9=BASIC+INFRA (calculated) — skip
+  agreement_value:10, sdr:11, sdr_minus:12, maintenance:13, legal_charges:14,
+  // col 15=total cost, 16=received, 17=remaining — skip
+  loan_status:18,
+  // col 19=financing option, 20=loan amount sanctioned — skip
+  bank_name:21,
+  // col 22-27 = OCR / file submitted fields — skip
+  sdr_received:28, sdr_received_date:29,
+  sanction_received:30, sanction_date:31, sanction_letter:32,
+  banker_contact:33, disbursement_status:34, disbursement_date:35,
+  remark:36, doc_submitted:37,
+};
+// Cheques: CUST NAME, PLOT NO, BANK DETAIL, CHQ NO, CHQ DATE, AMOUNT, REMARK
+const CHQ_COLS = { cust_name:0, plot_no:1, bank_detail:2, cheque_no:3, cheque_date:4, amount:5, entry_type:6 };
+// Prev Team: Customer Name, Plot Number, Plot Size, Agreement Value
+const PREV_COLS = { client_name:0, plot_no:1, plot_size:2, agreement_value:3 };
+
 async function parseFile(){
   const file=el('imp-file').files[0];
   const projId=el('imp-proj').value;
@@ -1159,39 +1181,70 @@ async function parseFile(){
   IMP.projId=projId; IMP.type=type;
   setBtn('imp-parse-btn',true);
 
-  const text = await file.text();
-  const rows = parseCSV(text);
-  if(rows.length<2){toast('CSV has no data rows','err');setBtn('imp-parse-btn',false);return;}
+  let text;
+  try { text = await file.text(); }
+  catch(e){ toast('Could not read file: '+e.message,'err'); setBtn('imp-parse-btn',false); return; }
 
-  const headers = rows[0].map(h=>h.trim().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,''));
-  const dataRows = rows.slice(1).filter(r=>r.some(c=>c.trim()!==''));
+  const allRows = parseCSV(text);
+  if(allRows.length < 2){ toast('CSV has no data rows','err'); setBtn('imp-parse-btn',false); return; }
 
-  // Map CSV columns to CRM fields
-  IMP.rows = dataRows.map(row=>{
-    const obj={};
-    headers.forEach((h,i)=>{ obj[h]=row[i]?.trim()||''; });
-    return obj;
-  }).filter(r=>{
-    if(type==='bookings') return r.client_name||r.name||r['name'];
-    if(type==='cheques')  return r.cust_name||r['cust_name'];
-    if(type==='prev')     return r.client_name||r['customer_name_'];
-    return false;
-  });
+  // For bookings: row 0=header, row 1=totals/blank — skip both, data starts at row 2
+  // For cheques and prev: row 0=header, data starts at row 1
+  const dataStartRow = type==='bookings' ? 2 : 1;
+  const dataRows = allRows.slice(dataStartRow).filter(r => r.some(c => c.trim() !== ''));
+
+  const colMap = type==='bookings' ? BK_COLS : type==='cheques' ? CHQ_COLS : PREV_COLS;
+
+  // Extract by column index — completely ignores header names
+  const getCol = (row, idx) => (idx !== undefined && row[idx] !== undefined) ? String(row[idx]).trim() : '';
+
+  if(type==='cheques'){
+    // Handle cheque continuation rows (no customer name = same customer)
+    let lastName='', lastPlot='';
+    IMP.rows=[];
+    dataRows.forEach(row=>{
+      const name = getCol(row, CHQ_COLS.cust_name);
+      const plot = getCol(row, CHQ_COLS.plot_no);
+      if(name) { lastName=name; if(plot && !['infra chrg','infra charge'].includes(plot.toLowerCase())) lastPlot=plot; }
+      const amt = parseFloat(getCol(row, CHQ_COLS.amount).replace(/[₹,\s]/g,''))||0;
+      const etype = getCol(row, CHQ_COLS.entry_type).toUpperCase();
+      const bank = getCol(row, CHQ_COLS.bank_detail);
+      const date = getCol(row, CHQ_COLS.cheque_date);
+      // Skip NILL total rows and zero-amount rows
+      if(amt <= 0 || (etype==='NILL' && !bank && !date)) return;
+      IMP.rows.push({
+        cust_name:   lastName,
+        plot_no:     lastPlot,
+        bank_detail: bank,
+        cheque_no:   getCol(row, CHQ_COLS.cheque_no),
+        cheque_date: getCol(row, CHQ_COLS.cheque_date),
+        amount:      amt,
+        entry_type:  getCol(row, CHQ_COLS.entry_type),
+      });
+    });
+  } else {
+    IMP.rows = dataRows.map(row=>{
+      const obj={};
+      Object.entries(colMap).forEach(([field, idx])=>{ obj[field] = getCol(row, idx); });
+      return obj;
+    }).filter(r => type==='bookings' ? r.client_name : type==='prev' ? r.client_name : r.cust_name);
+  }
 
   setBtn('imp-parse-btn',false);
 
-  // Show preview
-  const previewCols = {
-    bookings:['client_name','plot_no','agreement_value','bank_name','loan_status','disbursement_status'],
-    cheques: ['cust_name','plot_no','cheque_date','amount','entry_type'],
+  if(!IMP.rows.length){ toast('No valid rows found. Check the CSV format.','err'); return; }
+
+  // Preview table
+  const previewFields = {
+    bookings:['client_name','plot_no','agreement_value','bank_name','loan_status','disbursement_status','sanction_received'],
+    cheques: ['cust_name','plot_no','cheque_date','amount','entry_type','bank_detail'],
     prev:    ['client_name','plot_no','plot_size','agreement_value'],
   }[type]||[];
 
-  el('imp-preview-head').innerHTML=previewCols.map(c=>`<th>${c}</th>`).join('');
-  el('imp-preview-body').innerHTML=IMP.rows.slice(0,5).map(r=>`<tr>${previewCols.map(c=>`<td style="white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis">${esc(r[c]||r[c.replace(/_/g,' ')]||'—')}</td>`).join('')}</tr>`).join('');
+  el('imp-preview-head').innerHTML='<tr>'+previewFields.map(c=>`<th style="padding:5px 10px;background:var(--paper);border:1px solid var(--border);white-space:nowrap;font-size:11px">${c}</th>`).join('')+'</tr>';
+  el('imp-preview-body').innerHTML=IMP.rows.slice(0,8).map(r=>`<tr>${previewFields.map(c=>`<td style="padding:4px 10px;border:1px solid var(--border);white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;font-size:12px">${esc(r[c]||'—')}</td>`).join('')}</tr>`).join('');
   el('imp-count').textContent=IMP.rows.length;
-  el('imp-confirm').disabled=IMP.rows.length===0;
-
+  el('imp-confirm').disabled=false;
   hideEl('imp-s1'); showEl('imp-s2');
 }
 

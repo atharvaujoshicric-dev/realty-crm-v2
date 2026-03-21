@@ -184,6 +184,13 @@ function getColMap(sheetName, headers, type) {
       if(cols.sdr===undefined&&hn==='sdr') cols.sdr=idx;
       if(cols.bank_name===undefined&&hn.startsWith('bank')) cols.bank_name=idx;
       if(cols.loan_status===undefined&&(hn.includes('status')||hn.includes('agreement status'))) cols.loan_status=idx;
+      // After line 185:
+      const appEl = el('app');
+      if (!appEl) {
+        console.error('Critical: #app element not found in HTML');
+        showLoader(false);
+        return;
+      }
     }
   });
   return cols;

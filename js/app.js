@@ -23,32 +23,10 @@ const sb = window.supabase.createClient(SB_URL, SB_KEY, {
   }
 });
 
-// ── User Management — Edge Function with SQL RPC fallback ────
+// ── User Management — SQL RPC only (no edge function needed) ──
+// Uses SECURITY DEFINER SQL functions which run with superuser privileges.
 async function api(action, payload = {}) {
-  // Try edge function first
-  try {
-    const { data: { session } } = await sb.auth.getSession();
-    const token = session?.access_token;
-    if (!token) throw new Error('Not authenticated');
-    const res = await fetch(`${SB_URL}/functions/v1/manage-users`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'apikey': SB_KEY
-      },
-      body: JSON.stringify({ action, ...payload })
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-    return json;
-  } catch(e) {
-    // Edge function not deployed or network error — fall back to SQL RPC
-    if (e.message === 'Failed to fetch' || e.message.includes('NetworkError') || e.message.includes('fetch')) {
-      return await apiRPC(action, payload);
-    }
-    throw e;
-  }
+  return await apiRPC(action, payload);
 }
 
 // SQL RPC fallback (works without edge function via SECURITY DEFINER functions)

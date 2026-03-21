@@ -1198,28 +1198,25 @@ async function parseFile(){
 function parseCSV(text){
   const rows=[];
   let row=[], cell='', inQ=false;
+  const LF=10, CR=13, COMMA=44, QUOTE=34;
   for(let i=0;i<text.length;i++){
-    const c=text[i];
+    const cc=text.charCodeAt(i);
     if(inQ){
-      if(c==='"'&&text[i+1]==='"'){cell+='"';i++;}
-      else if(c==='"') inQ=false;
-      else cell+=c;
+      if(cc===QUOTE&&text.charCodeAt(i+1)===QUOTE){cell+='"';i++;}
+      else if(cc===QUOTE) inQ=false;
+      else cell+=text[i];
     } else {
-      if(c==='"') inQ=true;
-      else if(c===','){row.push(cell);cell='';}
-      else if(c==='
-'||c==='
-'){
+      if(cc===QUOTE) inQ=true;
+      else if(cc===COMMA){row.push(cell);cell='';}
+      else if(cc===LF||cc===CR){
         row.push(cell);cell='';
         if(row.some(x=>x.trim())) rows.push(row);
         row=[];
-        if(c==='
-'&&text[i+1]==='
-') i++;
-      } else cell+=c;
+        if(cc===CR&&text.charCodeAt(i+1)===LF) i++;
+      } else cell+=text[i];
     }
   }
-  if(cell||row.length) {row.push(cell);if(row.some(x=>x.trim())) rows.push(row);}
+  if(cell||row.length){row.push(cell);if(row.some(x=>x.trim())) rows.push(row);}
   return rows;
 }
 

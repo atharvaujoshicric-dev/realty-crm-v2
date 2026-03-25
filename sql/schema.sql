@@ -253,3 +253,46 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_auth_user();
+
+-- ── AUDIT LOG ────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.audit_log (
+  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id  UUID REFERENCES public.projects(id) ON DELETE CASCADE,
+  user_id     UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  user_name   TEXT NOT NULL,
+  user_role   TEXT NOT NULL,
+  action      TEXT NOT NULL,  -- 'CREATE','UPDATE','DELETE','IMPORT','LOGIN'
+  entity      TEXT NOT NULL,  -- 'booking','cheque','prev_booking','project','user'
+  entity_id   UUID,
+  entity_name TEXT,           -- e.g. client name for quick reference
+  detail      TEXT,           -- human-readable summary of what changed
+  changes     JSONB,          -- {field: {old, new}} for updates
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+-- Index for fast queries
+CREATE INDEX IF NOT EXISTS idx_audit_project ON public.audit_log(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_user    ON public.audit_log(user_id, created_at DESC);
+
+-- Disable RLS
+ALTER TABLE public.audit_log DISABLE ROW LEVEL SECURITY;
+GRANT ALL ON public.audit_log TO anon, authenticated;
+
+-- ── AUDIT LOG ────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.audit_log (
+  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id  UUID REFERENCES public.projects(id) ON DELETE CASCADE,
+  user_id     UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  user_name   TEXT NOT NULL DEFAULT '',
+  user_role   TEXT NOT NULL DEFAULT '',
+  action      TEXT NOT NULL,   -- 'create' | 'update' | 'delete' | 'import' | 'cancel'
+  entity      TEXT NOT NULL,   -- 'booking' | 'cheque' | 'prev_booking'
+  entity_id   UUID,
+  entity_name TEXT DEFAULT '',  -- client name / cheque ref for quick display
+  old_data    JSONB,            -- snapshot before change
+  new_data    JSONB,            -- snapshot after change
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.audit_log DISABLE ROW LEVEL SECURITY;
+GRANT ALL ON public.audit_log TO anon, authenticated;

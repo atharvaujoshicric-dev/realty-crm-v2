@@ -349,117 +349,24 @@ async function openSwitcher() {
 }
 
 // ── SA: PROJECTS ─────────────────────────────────────────────
-
-// ── SA OVERVIEW DASHBOARD ─────────────────────────────────────
-async function renderSAOverview() {
-  const grid = el('saOverviewGrid');
-  if (!grid) return;
-  grid.innerHTML = `<div class="lc"><div class="spin spin-dk"></div> Loading all projects…</div>`;
-  const [{ data: projs }, { data: bkAll }, { data: chqAll }] = await Promise.all([
-    sb.from('projects').select('*').order('created_at'),
-    sb.from('bookings').select('project_id,agreement_value,loan_status,disbursement_status,sanction_received,bank_name'),
-    sb.from('cheques').select('project_id,amount,entry_type'),
-  ]);
-  if (!projs?.length) { grid.innerHTML = ''; return; }
-
-  const bkByProj  = {};
-  const chqByProj = {};
-  (bkAll||[]).forEach(b  => { if(!bkByProj[b.project_id])  bkByProj[b.project_id]=[]; bkByProj[b.project_id].push(b); });
-  (chqAll||[]).forEach(c => { if(!chqByProj[c.project_id]) chqByProj[c.project_id]=[]; chqByProj[c.project_id].push(c); });
-
-  // Summary totals
-  const totalBk   = (bkAll||[]).length;
-  const totalVal  = (bkAll||[]).reduce((s,b)=>s+(+b.agreement_value||0),0);
-  const totalDisb = (bkAll||[]).filter(b=>b.disbursement_status==='done').length;
-  const totalChq  = (chqAll||[]).reduce((s,c)=>s+(+c.amount||0),0);
-
-  el('saov-bk').textContent  = totalBk;
-  el('saov-val').textContent = '₹'+fmtCr(totalVal);
-  el('saov-disb').textContent= totalDisb;
-  el('saov-chq').textContent = '₹'+fmtL(totalChq);
-
-  grid.innerHTML = '';
-  projs.forEach((p,i) => {
-    const bks  = bkByProj[p.id]  || [];
-    const chqs = chqByProj[p.id] || [];
-    const val  = bks.reduce((s,b)=>s+(+b.agreement_value||0),0);
-    const disb = bks.filter(b=>b.disbursement_status==='done').length;
-    const sanc = bks.filter(b=>b.sanction_received==='Yes').length;
-    const collected = chqs.reduce((s,c)=>s+(+c.amount||0),0);
-
-    const card = document.createElement('div');
-    card.className = 'proj-card';
-    card.style.cursor = 'pointer';
-    card.onclick = () => viewProjAsAdmin(p.id);
-    card.innerHTML = `
-      <div class="proj-hero sw${(p.swatch??i)%5}">
-        <span style="font-size:32px;opacity:.5;z-index:1;position:relative">🏘</span>
-        <div style="position:absolute;top:8px;right:10px;z-index:2"><span class="badge b-gold">${bks.length} bookings</span></div>
-      </div>
-      <div class="proj-body">
-        <div class="proj-name">${esc(p.name)}</div>
-        <div class="proj-loc">📍 ${esc(p.location||'—')}</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
-          <div><div style="font-family:'Cormorant Garamond',serif;font-size:16px;font-weight:700">₹${fmtCr(val)}</div><div style="font-size:9.5px;color:var(--inkf);text-transform:uppercase;letter-spacing:.8px">Total Value</div></div>
-          <div><div style="font-family:'Cormorant Garamond',serif;font-size:16px;font-weight:700">${disb}</div><div style="font-size:9.5px;color:var(--inkf);text-transform:uppercase;letter-spacing:.8px">Disbursed</div></div>
-          <div><div style="font-family:'Cormorant Garamond',serif;font-size:16px;font-weight:700">${sanc}</div><div style="font-size:9.5px;color:var(--inkf);text-transform:uppercase;letter-spacing:.8px">Sanctions</div></div>
-          <div><div style="font-family:'Cormorant Garamond',serif;font-size:16px;font-weight:700">₹${fmtL(collected)}</div><div style="font-size:9.5px;color:var(--inkf);text-transform:uppercase;letter-spacing:.8px">Collected</div></div>
-        </div>
-      </div>
-      <div class="proj-foot" style="gap:6px">
-        <span class="badge b-gray" style="font-size:10px">${esc(p.developer||'—')}</span>
-        <div style="display:flex;gap:5px">
-          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();editProject('${p.id}')">✏️</button>
-          <button class="btn btn-ghost btn-sm" style="color:var(--gold)" onclick="event.stopPropagation();openClearDataModal('${p.id}','${esc(p.name)}')">🗑 Data</button>
-          <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteProject('${p.id}','${p.name.replace(/'/g,"\'")}')" >Delete</button>
-        </div>
-      </div>`;
-    grid.appendChild(card);
-  });
-}
-
-
 async function renderSAProj() {
   const grid = el('saGrid');
   grid.innerHTML = `<div class="lc"><div class="spin spin-dk"></div> Loading…</div>`;
-  const [{ data: projs }, { data: allBk }, { data: allChq }] = await Promise.all([
+  const [{ data: projs }, { data: cnts }] = await Promise.all([
     sb.from('projects').select('*').order('created_at'),
-    sb.from('bookings').select('project_id,agreement_value,disbursement_status'),
-    sb.from('cheques').select('project_id,amount'),
+    sb.from('bookings').select('project_id'),
   ]);
+  const cntMap = {};
+  (cnts||[]).forEach(b => { cntMap[b.project_id] = (cntMap[b.project_id]||0)+1; });
   if (!projs?.length) {
     grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="ei">🏗</div><h3>No projects yet</h3><p>Create your first project</p></div>`;
     return;
   }
-  const bkMap={}, valMap={}, disbMap={}, chqMap={};
-  (allBk||[]).forEach(b=>{
-    bkMap[b.project_id]=(bkMap[b.project_id]||0)+1;
-    valMap[b.project_id]=(valMap[b.project_id]||0)+(+b.agreement_value||0);
-    if(b.disbursement_status==='done') disbMap[b.project_id]=(disbMap[b.project_id]||0)+1;
-  });
-  (allChq||[]).forEach(c=>{ chqMap[c.project_id]=(chqMap[c.project_id]||0)+(+c.amount||0); });
-  const totalBk=Object.values(bkMap).reduce((s,v)=>s+v,0);
-  const totalVal=Object.values(valMap).reduce((s,v)=>s+v,0);
-  const totalDisb=Object.values(disbMap).reduce((s,v)=>s+v,0);
-  const totalChq=Object.values(chqMap).reduce((s,v)=>s+v,0);
-  grid.innerHTML='';
-  const ov=document.createElement('div');
-  ov.style.cssText='grid-column:1/-1;margin-bottom:4px';
-  ov.innerHTML=`
-    <div style="margin-bottom:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--inkf)">Platform Overview — All ${projs.length} Projects</div>
-    <div class="stats-row">
-      ${sc('sc-gold','🏗',projs.length,'Projects','Platform-wide')}
-      ${sc('sc-teal','🏡',totalBk,'Total Bookings','All projects')}
-      ${sc('sc-sky','💰','₹'+fmtCr(totalVal),'Total Value','Agreement value')}
-      ${sc('sc-sage','✅',totalDisb,'Disbursed','Loans done')}
-      ${sc('sc-rose','🧾','₹'+fmtCr(totalChq),'Collected','All cheques')}
-    </div>
-    <div style="margin:16px 0 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--inkf)">Individual Projects</div>`;
-  grid.appendChild(ov);
-  projs.forEach((p,i)=>{
-    const bk=bkMap[p.id]||0,val=valMap[p.id]||0,disb=disbMap[p.id]||0,chq=chqMap[p.id]||0;
-    const d=document.createElement('div'); d.className='proj-card';
-    d.innerHTML=`
+  grid.innerHTML = '';
+  projs.forEach((p, i) => {
+    const bk = cntMap[p.id] || 0;
+    const d = document.createElement('div'); d.className = 'proj-card';
+    d.innerHTML = `
       <div class="proj-hero sw${(p.swatch??i)%5}">
         <span style="font-size:36px;opacity:.55;z-index:1;position:relative">🏘</span>
         <div style="position:absolute;top:8px;right:10px;z-index:2"><span class="badge b-gold">${bk} bookings</span></div>
@@ -469,23 +376,23 @@ async function renderSAProj() {
         <div class="proj-loc">📍 ${esc(p.location||'—')}</div>
         <div class="proj-stats">
           <div class="pst"><div class="v">${bk}</div><div class="l">Bookings</div></div>
-          <div class="pst"><div class="v">₹${fmtCr(val)}</div><div class="l">Value</div></div>
-          <div class="pst"><div class="v">${disb}</div><div class="l">Disbursed</div></div>
-          <div class="pst"><div class="v">₹${fmtL(chq)}</div><div class="l">Collected</div></div>
+          <div class="pst"><div class="v">${p.total_plots||'—'}</div><div class="l">Plots</div></div>
+          <div class="pst"><div class="v">${p.rera?'✓':'—'}</div><div class="l">RERA</div></div>
         </div>
       </div>
       <div class="proj-foot">
         <span class="badge b-gray" style="font-size:11px">${esc(p.developer||'No developer')}</span>
-        <div style="display:flex;gap:5px;flex-wrap:wrap">
+        <div style="display:flex;gap:6px">
           <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();editProject('${p.id}')" title="Edit">✏️</button>
           <button class="btn btn-ghost btn-sm" style="color:var(--gold)" onclick="event.stopPropagation();openClearDataModal('${p.id}','${esc(p.name)}')" title="Clear Data">🗑 Data</button>
-          <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteProject('${p.id}','${p.name.replace(/'/g,"\'")}')">Delete</button>
+          <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteProject('${p.id}','${p.name.replace(/'/g,"\\'")}')">Delete</button>
           <button class="btn btn-gold btn-sm" onclick="event.stopPropagation();viewProjAsAdmin('${p.id}')">Open →</button>
         </div>
       </div>`;
     grid.appendChild(d);
   });
 }
+
 function openProjModal() {
   S.editProjId = null;
   el('projMTitle').textContent = 'New Project';
@@ -787,7 +694,6 @@ function renderBookings() {
     ${cf.map(f=>`<td class="td-dim">${esc(String((b.custom_data||{})[f.field_name]||'—'))}</td>`).join('')}
     <td><div style="display:flex;gap:4px">
       ${canEdit?`<button class="btn btn-ghost btn-sm btn-icon" onclick="editBk('${b.id}')" title="Edit">✏️</button>`:''}
-      ${canCancel&&b.loan_status!=='Cancelled'?`<button class="btn btn-ghost btn-sm btn-icon" style="color:var(--rose)" onclick="cancelBk('${b.id}','${esc(b.client_name)}')" title="Cancel Booking">✕</button>`:''}
       ${canDel ?`<button class="btn btn-ghost btn-sm btn-icon" style="color:var(--rose)" onclick="delBk('${b.id}')" title="Delete">🗑</button>`:''}
     </div></td></tr>`).join('');
 }
@@ -1151,8 +1057,8 @@ function viewBk(id){
   const b=S.bookings.find(x=>x.id===id); if(!b) return;
   el('detailTitle').textContent=b.client_name;
   el('detailSub').textContent=`Plot ${b.plot_no} · ${b.bank_name||''} · ${b.loan_status}`;
-  const canEdit=true; // all roles can edit
-  el('detailEdit').style.display='';
+  const canEdit=S.profile?.role!=='sales';
+  el('detailEdit').style.display=canEdit?'':'none';
   el('detailEdit').onclick=()=>{closeM('detailModal');editBk(id);};
   const fmt=n=>n?'₹'+numFmt(n):'—';
   const secs=[
@@ -1218,7 +1124,6 @@ async function savePrev(){
   const name=v('pv-name').trim(); if(!name){toast('Name required','err');return;}
   const {error}=await sb.from('prev_bookings').insert({project_id:S.curProj.id,client_name:name,plot_no:v('pv-plot'),plot_size:parseFloat(v('pv-size'))||null,agreement_value:parseFloat(v('pv-val'))||null,notes:v('pv-notes')});
   if(error){toast(error.message,'err');return;}
-  await writeLog('create','prev_booking', null, name);
   closeM('prevModal'); await loadProjData(); renderPrev(); toast('Entry added!');
 }
 
@@ -1429,99 +1334,6 @@ function dlAuditCSV() {
   a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
   a.download = `audit_log_${today()}.csv`; a.click();
   toast('Audit log exported!');
-}
-
-
-// ── AUDIT LOG ────────────────────────────────────────────────
-async function logAction(action, entity, entityId, entityName, oldData, newData) {
-  if (!S.curProj || !S.profile) return;
-  try {
-    await sb.from('audit_log').insert({
-      project_id:  S.curProj.id,
-      user_id:     S.profile.id,
-      user_name:   S.profile.full_name,
-      user_role:   S.profile.role,
-      action,
-      entity,
-      entity_id:   entityId || null,
-      entity_name: entityName || '',
-      old_data:    oldData  || null,
-      new_data:    newData  || null,
-    });
-  } catch(e) { console.warn('Audit log failed:', e.message); }
-}
-
-async function renderAuditLog(projectId) {
-  const container = el(projectId ? 'logBody' : 'saLogBody');
-  if (!container) return;
-  container.innerHTML = `<tr><td colspan="7"><div class="lc"><div class="spin spin-dk"></div></div></td></tr>`;
-
-  let query = sb.from('audit_log').select('*').order('created_at', {ascending: false}).limit(200);
-  if (projectId) query = query.eq('project_id', projectId);
-
-  const { data, error } = await query;
-  if (error) { container.innerHTML = `<tr><td colspan="7" style="color:var(--rose);padding:16px">${error.message}</td></tr>`; return; }
-
-  if (!data?.length) {
-    container.innerHTML = `<tr><td colspan="7"><div class="empty"><div class="ei">📋</div><h3>No activity yet</h3></div></td></tr>`;
-    return;
-  }
-
-  const actionIcon = {create:'➕',update:'✏️',delete:'🗑',cancel:'✕',import:'📥'};
-  const entityColor = {booking:'b-gold',cheque:'b-blue',prev_booking:'b-gray'};
-
-  container.innerHTML = data.map(log => {
-    const dt = new Date(log.created_at);
-    const dateStr = dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
-    const timeStr = dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
-    const icon = actionIcon[log.action] || '•';
-    const eColor = entityColor[log.entity] || 'b-gray';
-
-    // Build change summary
-    let changes = '';
-    if (log.action === 'update' && log.old_data && log.new_data) {
-      const diffs = [];
-      const keys = new Set([...Object.keys(log.old_data||{}), ...Object.keys(log.new_data||{})]);
-      const skip = new Set(['updated_at','created_at','project_id','id']);
-      keys.forEach(k => {
-        if (skip.has(k)) return;
-        const oldV = log.old_data[k], newV = log.new_data[k];
-        if (String(oldV||'') !== String(newV||'')) {
-          diffs.push(`<span style="color:var(--inkl)">${k}:</span> <span style="color:var(--rose);text-decoration:line-through">${esc(String(oldV||'—'))}</span> → <span style="color:var(--sage)">${esc(String(newV||'—'))}</span>`);
-        }
-      });
-      changes = diffs.slice(0,4).join(' &nbsp;|&nbsp; ');
-      if (diffs.length > 4) changes += ` <span style="color:var(--inkf)">+${diffs.length-4} more</span>`;
-    } else if (log.action === 'import') {
-      changes = log.new_data ? `Imported ${log.new_data.count||''} ${log.new_data.type||''} records` : '';
-    } else if (log.action === 'cancel') {
-      changes = `Booking marked as Cancelled`;
-    }
-
-    return `<tr>
-      <td class="td-dim" style="white-space:nowrap">${dateStr}<br><span style="font-size:10px;color:var(--inkf)">${timeStr}</span></td>
-      <td><div style="font-weight:600;font-size:12px">${esc(log.user_name)}</div><div style="font-size:10px;color:var(--inkf)">${log.user_role}</div></td>
-      <td><span style="font-size:16px">${icon}</span> <strong>${log.action}</strong></td>
-      <td><span class="badge ${eColor}" style="font-size:10px">${log.entity}</span></td>
-      <td style="font-weight:500">${esc(log.entity_name||'—')}</td>
-      <td style="font-size:11px;color:var(--inkl);max-width:320px">${changes}</td>
-      ${!projectId?`<td class="td-dim" style="font-size:11px">${esc(log.project_id||'')}</td>`:''}
-    </tr>`;
-  }).join('');
-}
-
-// Cancel booking (marks as Cancelled, preserves data)
-async function cancelBk(id, clientName) {
-  if (!confirm(`Cancel booking for "${clientName}"?
-
-This sets the status to Cancelled. The booking record is kept.`)) return;
-  const bk = S.bookings.find(b => b.id === id);
-  const oldData = bk ? {...bk} : null;
-  const { error } = await sb.from('bookings').update({ loan_status: 'Cancelled' }).eq('id', id);
-  if (error) { toast(error.message, 'err'); return; }
-  await logAction('cancel', 'booking', id, clientName, oldData, { loan_status: 'Cancelled' });
-  await loadProjData(); renderBookings();
-  toast(`Booking for "${clientName}" cancelled`);
 }
 
 // ── CSV IMPORT ──────────────────────────────────────────────
@@ -1852,133 +1664,3 @@ function statusBadge(s){ const m={'Agreement Completed':'b-green','Disbursement 
 function chqBadge(t){ return {RPM:'b-blue',SM:'b-gold',BOUNCE:'b-rose',NILL:'b-gray',cash:'b-teal',Other:'b-gray'}[t]||'b-gray'; }
 
 function showCSVGuide(){showEl('csv-guide');}
-
-// ── AUDIT LOG ────────────────────────────────────────────────
-async function writeLog(action, entity, entityId, entityLabel, changes={}) {
-  if (!S.profile || !S.curProj) return;
-  try {
-    await sb.from('audit_log').insert({
-      project_id:   S.curProj.id,
-      user_id:      S.user.id,
-      user_name:    S.profile.full_name,
-      user_role:    S.profile.role,
-      action,        // 'create' | 'update' | 'cancel' | 'delete' | 'import'
-      entity,        // 'booking' | 'cheque' | 'prev_booking'
-      entity_id:    entityId  || null,
-      entity_label: entityLabel || '',
-      changes:      changes,
-    });
-  } catch(e) { console.warn('Audit log failed:', e.message); }
-}
-
-function diffObjects(oldObj, newObj, fields) {
-  const changes = {};
-  fields.forEach(f => {
-    const o = String(oldObj[f]??''), n = String(newObj[f]??'');
-    if (o !== n) changes[f] = { old: o, new: n };
-  });
-  return changes;
-}
-
-// ── RENDER AUDIT LOG ─────────────────────────────────────────
-async function renderAuditLog(projectId) {
-  const containerId = projectId ? 'saAuditList' : 'auditList';
-  const container = el(containerId);
-  if (!container) return;
-  container.innerHTML = `<div class="lc"><div class="spin spin-dk"></div> Loading…</div>`;
-
-  let query = sb.from('audit_log').select('*').order('created_at', {ascending: false}).limit(200);
-  if (projectId) query = query.eq('project_id', projectId);
-  else if (S.curProj) query = query.eq('project_id', S.curProj.id);
-
-  const { data, error } = await query;
-  if (error) { container.innerHTML = `<div class="empty"><p>Error loading log</p></div>`; return; }
-  if (!data?.length) { container.innerHTML = `<div class="empty"><div class="ei">📋</div><h3>No activity yet</h3><p>Actions will appear here</p></div>`; return; }
-
-  const actionColor = { create:'var(--sage)', update:'var(--sky)', cancel:'var(--gold)', delete:'var(--rose)', import:'var(--teal)' };
-  const actionIcon  = { create:'＋', update:'✏', cancel:'✕', delete:'🗑', import:'📥' };
-
-  container.innerHTML = data.map(log => {
-    const dt = new Date(log.created_at);
-    const dateStr = dt.toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'});
-    const timeStr = dt.toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'});
-    const color = actionColor[log.action] || 'var(--inkf)';
-    const icon  = actionIcon[log.action]  || '•';
-    const changesHTML = Object.keys(log.changes||{}).length ?
-      `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:5px">${
-        Object.entries(log.changes).map(([f,[o,n]])=>
-          `<span style="font-size:10px;padding:2px 7px;background:var(--paper2);border-radius:4px;border:1px solid var(--border)">
-            <span style="color:var(--inkf)">${f}:</span>
-            <span style="color:var(--rose);text-decoration:line-through">${esc(String(o?.old??''))}</span>
-            → <span style="color:var(--sage)">${esc(String(o?.new??''))}</span>
-          </span>`
-        ).join('')
-      }</div>` : '';
-    return `<div style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
-      <div style="width:32px;height:32px;border-radius:50%;background:${color}22;border:1.5px solid ${color};display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;color:${color}">${icon}</div>
-      <div style="flex:1;min-width:0">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="font-weight:600;font-size:13px">${esc(log.user_name)}</span>
-          <span class="role-pill rp-${log.user_role}" style="font-size:10px">${log.user_role}</span>
-          <span style="font-size:12px;color:${color};font-weight:600;text-transform:uppercase;letter-spacing:.5px">${log.action}</span>
-          <span style="font-size:12px;color:var(--inkf)">${log.entity}</span>
-          <span style="font-size:12px;font-weight:500">${esc(log.entity_label||'')}</span>
-        </div>
-        ${changesHTML}
-      </div>
-      <div style="text-align:right;flex-shrink:0">
-        <div style="font-size:11px;font-weight:600;color:var(--inkl)">${dateStr}</div>
-        <div style="font-size:11px;color:var(--inkf)">${timeStr}</div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-async function renderProjectAudit() {
-  await renderAuditLog(null);
-}
-
-async function renderSAAudit() {
-  // SA sees ALL projects' logs
-  const container = el('saAuditList');
-  if (!container) return;
-  container.innerHTML = `<div class="lc"><div class="spin spin-dk"></div> Loading…</div>`;
-  const { data, error } = await sb.from('audit_log')
-    .select('*, projects(name)')
-    .order('created_at', {ascending:false})
-    .limit(500);
-  if (error || !data?.length) {
-    container.innerHTML = `<div class="empty"><div class="ei">📋</div><h3>No activity yet</h3></div>`;
-    return;
-  }
-  const actionColor = { create:'var(--sage)', update:'var(--sky)', cancel:'var(--gold)', delete:'var(--rose)', import:'var(--teal)' };
-  const actionIcon  = { create:'＋', update:'✏', cancel:'✕', delete:'🗑', import:'📥' };
-  // Group by project
-  const byProject = {};
-  data.forEach(log => {
-    const pname = log.projects?.name || 'Unknown Project';
-    if (!byProject[pname]) byProject[pname] = [];
-    byProject[pname].push(log);
-  });
-  container.innerHTML = Object.entries(byProject).map(([pname, logs]) => `
-    <div style="margin-bottom:24px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--gold);padding:8px 0;border-bottom:2px solid var(--goldb);margin-bottom:8px">🏗 ${esc(pname)}</div>
-      ${logs.map(log => {
-        const dt = new Date(log.created_at);
-        const color = actionColor[log.action] || 'var(--inkf)';
-        const icon  = actionIcon[log.action]  || '•';
-        return `<div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
-          <div style="width:28px;height:28px;border-radius:50%;background:${color}22;border:1.5px solid ${color};display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;color:${color}">${icon}</div>
-          <div style="flex:1">
-            <span style="font-weight:600;font-size:12px">${esc(log.user_name)}</span>
-            <span class="role-pill rp-${log.user_role}" style="font-size:9px;margin:0 5px">${log.user_role}</span>
-            <span style="font-size:12px;color:${color};font-weight:600">${log.action}</span>
-            <span style="font-size:12px;color:var(--inkf)"> ${log.entity} </span>
-            <span style="font-size:12px">${esc(log.entity_label||'')}</span>
-          </div>
-          <div style="font-size:11px;color:var(--inkf);flex-shrink:0">${dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})} ${dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>
-        </div>`;
-      }).join('')}
-    </div>`).join('');
-}
-

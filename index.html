@@ -77,8 +77,45 @@
     <!-- SA: PROJECTS -->
     <div class="page" id="p-sa-proj">
       <div class="ph">
-        <div><h1>All Projects</h1><p>Manage every project on the platform</p></div>
+        <div><h1>Platform Overview</h1><p>All projects across RealtyFlow</p></div>
         <div class="ph-r"><button class="btn btn-gold" onclick="openProjModal()">＋ New Project</button></div>
+      </div>
+      <!-- Platform stats -->
+      <div class="stats-row" id="saOverviewStats" style="margin-bottom:20px"></div>
+      <!-- Platform charts -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px">
+        <div class="card">
+          <div class="card-hd">
+            <span class="card-hd-title">Bookings per Project</span>
+            <div style="display:flex;gap:6px;align-items:center">
+              <select id="saC1-type" onchange="renderSACharts()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:5px">
+                <option value="bar">Bar</option><option value="line">Line</option><option value="doughnut">Pie</option>
+              </select>
+              <button class="dl-btn" onclick="dlChart('saC1')">⬇</button>
+            </div>
+          </div>
+          <div class="card-body"><div class="chart-wrap"><canvas id="saC1"></canvas></div></div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><span class="card-hd-title">Loan Status (All Projects)</span><button class="dl-btn" onclick="dlChart('saC2')">⬇</button></div>
+          <div class="card-body"><div class="chart-wrap"><canvas id="saC2"></canvas></div></div>
+        </div>
+        <div class="card">
+          <div class="card-hd">
+            <span class="card-hd-title">Agreement Value (₹Cr)</span>
+            <div style="display:flex;gap:6px;align-items:center">
+              <select id="saC3-type" onchange="renderSACharts()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:5px">
+                <option value="bar">Bar</option><option value="line">Line</option><option value="doughnut">Pie</option>
+              </select>
+              <button class="dl-btn" onclick="dlChart('saC3')">⬇</button>
+            </div>
+          </div>
+          <div class="card-body"><div class="chart-wrap"><canvas id="saC3"></canvas></div></div>
+        </div>
+      </div>
+      <!-- Project cards -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <h2 style="font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:700">Projects</h2>
       </div>
       <div class="proj-grid" id="saGrid"></div>
     </div>
@@ -90,6 +127,19 @@
         <div class="ph-r"><button class="btn btn-gold" onclick="openUserModal(null)">＋ Add User</button></div>
       </div>
       <div class="card"><div class="users-list" id="saUsersList"><div class="lc"><div class="spin spin-dk"></div></div></div></div>
+    </div>
+
+    <!-- SA: AUDIT LOG -->
+    <div class="page" id="p-sa-audit">
+      <div class="ph">
+        <div><h1>Platform Audit Log</h1><p>Every action by every user across all projects</p></div>
+        <div class="ph-r"><button class="btn btn-outline btn-sm" onclick="renderSAAudit()">↻ Refresh</button></div>
+      </div>
+      <div class="card">
+        <div class="card-body" id="saAuditList" style="max-height:680px;overflow-y:auto">
+          <div class="lc"><div class="spin spin-dk"></div></div>
+        </div>
+      </div>
     </div>
 
     <!-- SA: IMPORT -->
@@ -337,16 +387,71 @@ notes</code>
       </div>
       <div class="stats-row" id="analStats" style="margin-bottom:20px"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-        <div class="card"><div class="card-hd"><span class="card-hd-title">Loan Status Distribution</span><button class="dl-btn" onclick="dlChart('c-status')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-status"></canvas></div></div></div>
-        <div class="card"><div class="card-hd"><span class="card-hd-title">Bank-wise Bookings</span><button class="dl-btn" onclick="dlChart('c-bank')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-bank"></canvas></div></div></div>
+        <div class="card"><div class="card-hd" id="c-status_hd"><span class="card-hd-title">Loan Status Distribution</span><button class="dl-btn" onclick="dlChart('c-status')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-status"></canvas></div></div></div>
+        <div class="card"><div class="card-hd" id="c-bank_hd"><span class="card-hd-title">Bank-wise Bookings</span><button class="dl-btn" onclick="dlChart('c-bank')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-bank"></canvas></div></div></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-        <div class="card"><div class="card-hd"><span class="card-hd-title">Monthly Booking Trend</span><button class="dl-btn" onclick="dlChart('c-monthly')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-monthly"></canvas></div></div></div>
-        <div class="card"><div class="card-hd"><span class="card-hd-title">Agreement Value by Bank (₹L)</span><button class="dl-btn" onclick="dlChart('c-value')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-value"></canvas></div></div></div>
+        <div class="card"><div class="card-hd" id="c-monthly_hd"><span class="card-hd-title">Monthly Booking Trend</span><button class="dl-btn" onclick="dlChart('c-monthly')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-monthly"></canvas></div></div></div>
+        <div class="card"><div class="card-hd" id="c-value_hd"><span class="card-hd-title">Agreement Value by Bank (₹L)</span><button class="dl-btn" onclick="dlChart('c-value')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-value"></canvas></div></div></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-        <div class="card"><div class="card-hd"><span class="card-hd-title">Disbursement Status</span><button class="dl-btn" onclick="dlChart('c-disb')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-disb"></canvas></div></div></div>
-        <div class="card"><div class="card-hd"><span class="card-hd-title">Collections by Type (₹L)</span><button class="dl-btn" onclick="dlChart('c-pay')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-pay"></canvas></div></div></div>
+        <div class="card"><div class="card-hd" id="c-disb_hd"><span class="card-hd-title">Disbursement Status</span><button class="dl-btn" onclick="dlChart('c-disb')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-disb"></canvas></div></div></div>
+        <div class="card"><div class="card-hd" id="c-pay_hd"><span class="card-hd-title">Collections by Type (₹L)</span><button class="dl-btn" onclick="dlChart('c-pay')">⬇ PNG</button></div><div class="card-body"><div class="chart-wrap"><canvas id="c-pay"></canvas></div></div></div>
+      </div>
+    </div>
+
+    <!-- AUDIT LOG -->
+    <div class="page" id="p-audit">
+      <div class="ph">
+        <div><h1>Audit Log</h1><p>Complete trail of every action — who did what and when</p></div>
+        <div class="ph-r"><button class="btn btn-outline btn-sm" onclick="dlAuditCSV()">⬇ Export CSV</button></div>
+      </div>
+      <div class="card">
+        <div class="frow">
+          <input type="text" id="audit-search" placeholder="🔍 Name, detail…" oninput="filterAudit()" style="width:200px">
+          <select id="audit-role" onchange="filterAudit()">
+            <option value="">All Roles</option>
+            <option value="sales">Sales</option>
+            <option value="admin">Admin</option>
+            <option value="superadmin">Super Admin</option>
+          </select>
+          <select id="audit-action" onchange="filterAudit()">
+            <option value="">All Actions</option>
+            <option value="CREATE">Create</option>
+            <option value="UPDATE">Update</option>
+            <option value="DELETE">Delete</option>
+            <option value="IMPORT">Import</option>
+          </select>
+          <select id="audit-entity" onchange="filterAudit()">
+            <option value="">All Types</option>
+            <option value="booking">Booking</option>
+            <option value="cheque">Cheque</option>
+            <option value="prev_booking">Prev Booking</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="clearAuditFilters()">✕ Clear</button>
+          <span class="fcount" id="audit-cnt"></span>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Type</th><th>Record</th><th>Detail</th></tr></thead>
+            <tbody id="audit-body"><tr><td colspan="7"><div class="lc"><div class="spin spin-dk"></div></div></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- AUDIT LOG (project level) -->
+    <div class="page" id="p-audit">
+      <div class="ph">
+        <div><h1>Audit Log</h1><p>Full trail of every action in this project</p></div>
+        <div class="ph-r">
+          <button class="btn btn-outline btn-sm" onclick="renderProjectAudit()">↻ Refresh</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body" id="auditList" style="max-height:680px;overflow-y:auto">
+          <div class="lc"><div class="spin spin-dk"></div></div>
+        </div>
       </div>
     </div>
 

@@ -1,3 +1,23 @@
+
+-- ── AUDIT LOG TABLE (run this if you haven't already) ────────
+CREATE TABLE IF NOT EXISTS public.audit_log (
+  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id  UUID REFERENCES public.projects(id) ON DELETE CASCADE,
+  user_id     UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  user_name   TEXT NOT NULL DEFAULT '',
+  user_role   TEXT NOT NULL DEFAULT '',
+  action      TEXT NOT NULL DEFAULT '',
+  entity      TEXT NOT NULL DEFAULT '',
+  entity_id   UUID,
+  entity_name TEXT DEFAULT '',
+  detail      TEXT DEFAULT '',
+  changes     JSONB,
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_audit_project ON public.audit_log(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_user    ON public.audit_log(user_id, created_at DESC);
+ALTER TABLE public.audit_log DISABLE ROW LEVEL SECURITY;
+GRANT ALL ON public.audit_log TO anon, authenticated;
 -- ================================================================
 --  RealtyFlow CRM — COMPLETE FIX
 --  Run this ENTIRE file in Supabase SQL Editor → New Query → Run

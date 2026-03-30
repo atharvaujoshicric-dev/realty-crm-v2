@@ -264,10 +264,18 @@ async function navigate(pid) {
   const isSA = pid.startsWith('p-sa-') || pid === 'p-audit';
   if (!isSA && S.curProj) await loadProjData();
   const map = {
-    'p-sa-proj': renderSAProj, 'p-sa-users': renderSAUsers, 'p-sa-import': renderImportPage,
-    'p-dash': renderDash, 'p-bookings': renderBookings, 'p-pipeline': renderPipeline,
-    'p-cheques': renderCheques, 'p-prev': renderPrev, 'p-analytics': renderAnalytics,
-    'p-settings': renderSettings, 'p-audit': renderAuditLog,
+    'p-sa-proj':   renderSAProj,
+    'p-sa-users':  renderSAUsers,
+    'p-sa-import': renderImportPage,
+    'p-sa-audit':  renderSAAudit,
+    'p-dash':      renderDash,
+    'p-bookings':  renderBookings,
+    'p-pipeline':  renderPipeline,
+    'p-cheques':   renderCheques,
+    'p-prev':      renderPrev,
+    'p-analytics': renderAnalytics,
+    'p-audit':     renderProjectAudit,
+    'p-settings':  renderSettings,
   };
   map[pid]?.();
 }
@@ -285,7 +293,7 @@ function updateProjHeader() {
   el('pcRole').textContent   = S.profile?.role || '';
   el('dashTitle').textContent = p.name;
   el('dashSub').textContent  = `${p.location || ''} · ${S.bookings.length} bookings`;
-  el('backBtn').style.display = S.profile?.role === 'superadmin' ? '' : 'none';
+  el('backBtn').style.display = (S.profile?.role === 'superadmin' && S.curProj) ? '' : 'none';
 }
 
 async function loadMyProjects() {
@@ -310,13 +318,6 @@ async function loadProjData() {
   S.prev = p.data || []; S.customFields = cf.data || [];
 }
 
-function backToProjects() {
-  S.curProj = null; S.bookings = []; S.cheques = []; S.prev = [];
-  el('projChip').style.display = 'none';
-  el('backBtn').style.display = 'none';
-  buildNav('superadmin');
-  goPage('p-sa-proj'); renderSAProj();
-}
 
 async function viewProjAsAdmin(pid) {
   const { data: p } = await sb.from('projects').select('*').eq('id', pid).single();
@@ -327,6 +328,16 @@ async function viewProjAsAdmin(pid) {
   el('projChip').style.display = 'none';
   goPage('p-dash');
   await loadProjData(); updateProjHeader(); renderDash();
+}
+
+function backToProjects() {
+  // Full reset back to SA project list
+  S.curProj = null; S.bookings = []; S.cheques = []; S.prev = []; S.customFields = [];
+  el('backBtn').style.display = 'none';
+  el('projChip').style.display = 'none';
+  buildNav('superadmin');
+  goPage('p-sa-proj');
+  renderSAProj();
 }
 
 async function openSwitcher() {
@@ -1310,616 +1321,98 @@ async function logSAAction(action, entity, entityId, entityName, detail) {
   } catch(e) { console.warn('Audit log failed:', e.message); }
 }
 
-async function renderAuditLog() {
-  const page = el('p-audit');
-  if (!page) return;
-
-  // Build filter UI if not already built
-  let wrap = el('audit-wrap');
-  if (!wrap) {
-    page.innerHTML = `
-      <div class="ph"><div><h1>Audit Log</h1><p>Complete trail of all actions</p></div>
-        <div class="ph-r">
-          <button class="btn btn-outline btn-sm" onclick="dlAuditCSV()">⬇ Export CSV</button>
-        </div>
-      </div>
-      <div class="card">
-        <div class="frow">
-          <input type="text" id="audit-search" placeholder="🔍 Name, action…" oninput="filterAudit()" style="width:200px">
-          <select id="audit-role" onchange="filterAudit()">
-            <option value="">All Roles</option>
-            <option value="sales">Sales</option>
-            <option value="admin">Admin</option>
-            <option value="superadmin">Super Admin</option>
-          </select>
-          <select id="audit-action" onchange="filterAudit()">
-            <option value="">All Actions</option>
-            <option value="CREATE">Create</option>
-            <option value="UPDATE">Update</option>
-            <option value="DELETE">Delete</option>
-            <option value="IMPORT">Import</option>
-          </select>
-          <select id="audit-entity" onchange="filterAudit()">
-            <option value="">All Types</option>
-            <option value="booking">Booking</option>
-            <option value="cheque">Cheque</option>
-            <option value="prev_booking">Prev Booking</option>
-            <option value="project">Project</option>
-            <option value="user">User</option>
-          </select>
-          <button class="btn btn-ghost btn-sm" onclick="clearAuditFilters()">✕ Clear</button>
-        </div>
-        <div class="tw" id="audit-wrap">
-          <table>
-            <thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Type</th><th>Record</th><th>Detail</th></tr></thead>
-            <tbody id="audit-body"><tr><td colspan="7"><div class="lc"><div class="spin spin-dk"></div></div></td></tr></tbody>
-          </table>
-        </div>
-      </div>`;
-    wrap = el('audit-wrap');
-  }
-
-  await loadAuditData();
-}
-
-let auditAll = [];
-
-async function loadAuditData() {
-  const body = el('audit-body');
-  if (!body) return;
-  body.innerHTML = `<tr><td colspan="7"><div class="lc"><div class="spin spin-dk"></div></div></td></tr>`;
-
-  let query = sb.from('audit_log').select('*').order('created_at', {ascending: false}).limit(500);
-
-  // Superadmin sees all; admin/sales see only their project
-  if (S.profile?.role !== 'superadmin' && S.curProj) {
-    query = query.eq('project_id', S.curProj.id);
-  }
-
-  const { data, error } = await query;
-  if (error) { body.innerHTML = `<tr><td colspan="7" style="color:var(--rose);padding:14px">${error.message}</td></tr>`; return; }
-  auditAll = data || [];
-  filterAudit();
-}
-
-function filterAudit() {
-  const s   = (el('audit-search')?.value||'').toLowerCase();
-  const role = el('audit-role')?.value||'';
-  const action = el('audit-action')?.value||'';
-  const entity = el('audit-entity')?.value||'';
-
-  let d = auditAll;
-  if (s)      d = d.filter(r => (r.user_name||'').toLowerCase().includes(s) || (r.entity_name||'').toLowerCase().includes(s) || (r.detail||'').toLowerCase().includes(s));
-  if (role)   d = d.filter(r => r.user_role === role);
-  if (action) d = d.filter(r => r.action === action);
-  if (entity) d = d.filter(r => r.entity === entity);
-
-  const body = el('audit-body');
-  if (!body) return;
-  if (!d.length) { body.innerHTML = `<tr><td colspan="7"><div class="empty"><div class="ei">📋</div><h3>No entries</h3></div></td></tr>`; return; }
-
-  const actionColors = { CREATE:'b-green', UPDATE:'b-blue', DELETE:'b-rose', IMPORT:'b-teal' };
-  const roleColors   = { superadmin:'rp-sa', admin:'rp-admin', sales:'rp-sales' };
-
-  body.innerHTML = d.map(r => {
-    const dt = new Date(r.created_at);
-    const time = dt.toLocaleDateString('en-IN', {day:'2-digit',month:'short'}) + ' ' + dt.toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'});
-    return `<tr>
-      <td class="td-dim" style="white-space:nowrap">${time}</td>
-      <td class="td-name">${esc(r.user_name||'—')}</td>
-      <td><span class="role-pill ${roleColors[r.user_role]||''}">${r.user_role}</span></td>
-      <td><span class="badge ${actionColors[r.action]||'b-gray'}">${r.action}</span></td>
-      <td class="td-dim">${r.entity}</td>
-      <td>${esc(r.entity_name||'—')}</td>
-      <td class="td-dim" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.detail||'')}">${esc(r.detail||'—')}</td>
-    </tr>`;
-  }).join('');
-}
-
-function clearAuditFilters() {
-  ['audit-search','audit-role','audit-action','audit-entity'].forEach(id => { const e=el(id); if(e) e.value=''; });
-  filterAudit();
-}
-
-function dlAuditCSV() {
-  const rows = [['Time','User','Role','Action','Entity','Record','Detail'],
-    ...auditAll.map(r => [new Date(r.created_at).toLocaleString('en-IN'), r.user_name||'', r.user_role, r.action, r.entity, r.entity_name||'', r.detail||''])];
-  const csv = rows.map(r => r.map(c => '"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
-  a.download = `audit_log_${today()}.csv`; a.click();
-  toast('Audit log exported!');
-}
-
-
 // ── AUDIT LOG ────────────────────────────────────────────────
-async function logAction(action, entity, entityId, entityName, oldData, newData) {
-  if (!S.curProj || !S.profile) return;
-  try {
-    await sb.from('audit_log').insert({
-      project_id:  S.curProj.id,
-      user_id:     S.profile.id,
-      user_name:   S.profile.full_name,
-      user_role:   S.profile.role,
-      action,
-      entity,
-      entity_id:   entityId || null,
-      entity_name: entityName || '',
-      old_data:    oldData  || null,
-      new_data:    newData  || null,
-    });
-  } catch(e) { console.warn('Audit log failed:', e.message); }
+async function renderProjectAudit() {
+  const wrap = el('auditList');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="lc"><div class="spin spin-dk"></div></div>';
+  if (!S.curProj) { wrap.innerHTML = '<div class="empty"><p>No project selected</p></div>'; return; }
+
+  const { data, error } = await sb
+    .from('audit_log')
+    .select('*')
+    .eq('project_id', S.curProj.id)
+    .order('created_at', { ascending: false })
+    .limit(300);
+
+  if (error) { wrap.innerHTML = `<div class="empty"><p style="color:var(--rose)">Error: ${esc(error.message)}</p></div>`; return; }
+  wrap.innerHTML = buildAuditHTML(data || []);
 }
 
-async function renderAuditLog(projectId) {
-  const container = el(projectId ? 'logBody' : 'saLogBody');
-  if (!container) return;
-  container.innerHTML = `<tr><td colspan="7"><div class="lc"><div class="spin spin-dk"></div></div></td></tr>`;
+async function renderSAAudit() {
+  const wrap = el('saAuditList');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="lc"><div class="spin spin-dk"></div></div>';
 
-  let query = sb.from('audit_log').select('*').order('created_at', {ascending: false}).limit(200);
-  if (projectId) query = query.eq('project_id', projectId);
+  const { data: projs } = await sb.from('projects').select('id,name');
+  const { data, error } = await sb
+    .from('audit_log')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(500);
 
-  const { data, error } = await query;
-  if (error) { container.innerHTML = `<tr><td colspan="7" style="color:var(--rose);padding:16px">${error.message}</td></tr>`; return; }
+  if (error) { wrap.innerHTML = `<div class="empty"><p style="color:var(--rose)">Error: ${esc(error.message)}</p></div>`; return; }
+  if (!data?.length) { wrap.innerHTML = '<div class="empty"><div class="ei">📋</div><h3>No activity yet</h3><p>Actions appear here as users work</p></div>'; return; }
 
-  if (!data?.length) {
-    container.innerHTML = `<tr><td colspan="7"><div class="empty"><div class="ei">📋</div><h3>No activity yet</h3></div></td></tr>`;
-    return;
-  }
+  const projMap = {};
+  (projs||[]).forEach(p => projMap[p.id] = p.name);
 
-  const actionIcon = {create:'➕',update:'✏️',delete:'🗑',cancel:'✕',import:'📥'};
-  const entityColor = {booking:'b-gold',cheque:'b-blue',prev_booking:'b-gray'};
+  // Group by project
+  const byProj = {};
+  data.forEach(log => {
+    const pname = projMap[log.project_id] || 'Unknown Project';
+    if (!byProj[pname]) byProj[pname] = [];
+    byProj[pname].push(log);
+  });
 
-  container.innerHTML = data.map(log => {
+  wrap.innerHTML = Object.entries(byProj).map(([pname, logs]) =>
+    `<div style="margin-bottom:20px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--gold);padding:8px 0 6px;border-bottom:2px solid var(--goldb);margin-bottom:6px">
+        🏗 ${esc(pname)} <span style="font-weight:400;color:var(--inkf)">(${logs.length} actions)</span>
+      </div>
+      ${buildAuditHTML(logs)}
+    </div>`
+  ).join('');
+}
+
+function buildAuditHTML(logs) {
+  if (!logs.length) return '<div class="empty"><div class="ei">📋</div><h3>No activity yet</h3><p>Actions will appear here</p></div>';
+  const aColor = { create:'var(--sage)', update:'var(--sky)', cancel:'var(--gold)', delete:'var(--rose)', import:'var(--teal)' };
+  const aIcon  = { create:'＋', update:'✏', cancel:'✕', delete:'🗑', import:'📥' };
+  return logs.map(log => {
     const dt = new Date(log.created_at);
     const dateStr = dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
     const timeStr = dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
-    const icon = actionIcon[log.action] || '•';
-    const eColor = entityColor[log.entity] || 'b-gray';
-
-    // Build change summary
-    let changes = '';
-    if (log.action === 'update' && log.old_data && log.new_data) {
-      const diffs = [];
-      const keys = new Set([...Object.keys(log.old_data||{}), ...Object.keys(log.new_data||{})]);
-      const skip = new Set(['updated_at','created_at','project_id','id']);
-      keys.forEach(k => {
-        if (skip.has(k)) return;
-        const oldV = log.old_data[k], newV = log.new_data[k];
-        if (String(oldV||'') !== String(newV||'')) {
-          diffs.push(`<span style="color:var(--inkl)">${k}:</span> <span style="color:var(--rose);text-decoration:line-through">${esc(String(oldV||'—'))}</span> → <span style="color:var(--sage)">${esc(String(newV||'—'))}</span>`);
-        }
-      });
-      changes = diffs.slice(0,4).join(' &nbsp;|&nbsp; ');
-      if (diffs.length > 4) changes += ` <span style="color:var(--inkf)">+${diffs.length-4} more</span>`;
-    } else if (log.action === 'import') {
-      changes = log.new_data ? `Imported ${log.new_data.count||''} ${log.new_data.type||''} records` : '';
-    } else if (log.action === 'cancel') {
-      changes = `Booking marked as Cancelled`;
-    }
-
-    return `<tr>
-      <td class="td-dim" style="white-space:nowrap">${dateStr}<br><span style="font-size:10px;color:var(--inkf)">${timeStr}</span></td>
-      <td><div style="font-weight:600;font-size:12px">${esc(log.user_name)}</div><div style="font-size:10px;color:var(--inkf)">${log.user_role}</div></td>
-      <td><span style="font-size:16px">${icon}</span> <strong>${log.action}</strong></td>
-      <td><span class="badge ${eColor}" style="font-size:10px">${log.entity}</span></td>
-      <td style="font-weight:500">${esc(log.entity_name||'—')}</td>
-      <td style="font-size:11px;color:var(--inkl);max-width:320px">${changes}</td>
-      ${!projectId?`<td class="td-dim" style="font-size:11px">${esc(log.project_id||'')}</td>`:''}
-    </tr>`;
-  }).join('');
-}
-
-// Cancel booking (marks as Cancelled, preserves data)
-async function cancelBk(id, clientName) {
-  if (!confirm(`Cancel booking for "${clientName}"?
-
-This sets the status to Cancelled. The booking record is kept.`)) return;
-  const bk = S.bookings.find(b => b.id === id);
-  const oldData = bk ? {...bk} : null;
-  const { error } = await sb.from('bookings').update({ loan_status: 'Cancelled' }).eq('id', id);
-  if (error) { toast(error.message, 'err'); return; }
-  await logAction('cancel', 'booking', id, clientName, oldData, { loan_status: 'Cancelled' });
-  await loadProjData(); renderBookings();
-  toast(`Booking for "${clientName}" cancelled`);
-}
-
-// ── CSV IMPORT ──────────────────────────────────────────────
-const IMP = { rows:[], type:'', projId:'' };
-
-function renderImportPage(){
-  sb.from('projects').select('id,name').order('name').then(({data})=>{
-    el('imp-proj').innerHTML='<option value="">— Select Project —</option>'+
-      (data||[]).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
-  });
-  resetImport();
-}
-
-function resetImport(){
-  IMP.rows=[]; IMP.type=''; IMP.projId='';
-  showEl('imp-s1'); hideEl('imp-s2'); hideEl('imp-result');
-  const fi=el('imp-file'); if(fi) fi.value='';
-  el('imp-fname').textContent=''; el('imp-parse-btn').disabled=true;
-}
-
-function onFileChange(input){
-  const file=input.files[0]; if(!file) return;
-  el('imp-fname').textContent='📄 '+file.name;
-  el('imp-parse-btn').disabled=false;
-}
-
-// ── COLUMN MAPS ─────────────────────────────────────────────
-// Bookings CSV (our pre-processed CSV with named headers)
-const BK_COLS = {
-  serial_no:0, booking_date:1, client_name:2, contact:3,
-  plot_no:4, plot_size:5, basic_rate:6, infra:7,
-  agreement_value:8, sdr:9, sdr_minus:10, maintenance:11, legal_charges:12,
-  bank_name:13, banker_contact:14, loan_status:15,
-  sanction_received:16, sanction_date:17, sanction_letter:18,
-  sdr_received:19, sdr_received_date:20,
-  disbursement_status:21, disbursement_date:22, disbursement_remark:23,
-  doc_submitted:24, remark:25,
-  // extra cols — present in our CSV, safe to include
-  loan_amount:26, ocr_received:27, file_submitted_bank:28, file_submitted_date:29,
-};
-const CHQ_COLS  = { cust_name:0, plot_no:1, bank_detail:2, cheque_no:3, cheque_date:4, amount:5, entry_type:6 };
-const PREV_COLS = { client_name:0, plot_no:1, plot_size:2, agreement_value:3, notes:4 };
-
-async function parseFile(){
-  const file=el('imp-file').files[0];
-  const projId=el('imp-proj').value;
-  const type=el('imp-type').value;
-  if(!file){toast('Select a CSV file','err');return;}
-  if(!projId){toast('Select a project','err');return;}
-  if(!type){toast('Select what this CSV contains','err');return;}
-
-  IMP.projId=projId; IMP.type=type;
-  setBtn('imp-parse-btn',true);
-
-  let text;
-  try { text = await file.text(); }
-  catch(e){ toast('Could not read file: '+e.message,'err'); setBtn('imp-parse-btn',false); return; }
-
-  const allRows = parseCSV(text);
-  if(allRows.length < 2){ toast('CSV has no data rows','err'); setBtn('imp-parse-btn',false); return; }
-
-  // For bookings: row 0=header, row 1=totals/blank — skip both, data starts at row 2
-  // For cheques and prev: row 0=header, data starts at row 1
-  const dataStartRow = type==='bookings' ? 2 : 1;
-  const dataRows = allRows.slice(dataStartRow).filter(r => r.some(c => c.trim() !== ''));
-
-  const colMap = type==='bookings' ? BK_COLS : type==='cheques' ? CHQ_COLS : PREV_COLS;
-
-  // Extract by column index — completely ignores header names
-  const getCol = (row, idx) => (idx !== undefined && row[idx] !== undefined) ? String(row[idx]).trim() : '';
-
-  if(type==='cheques'){
-    // Handle cheque continuation rows (no customer name = same customer)
-    let lastName='', lastPlot='';
-    IMP.rows=[];
-    dataRows.forEach(row=>{
-      const name = getCol(row, CHQ_COLS.cust_name);
-      const plot = getCol(row, CHQ_COLS.plot_no);
-      if(name) { lastName=name; if(plot && !['infra chrg','infra charge'].includes(plot.toLowerCase())) lastPlot=plot; }
-      const amt = parseFloat(getCol(row, CHQ_COLS.amount).replace(/[₹,\s]/g,''))||0;
-      const etype = getCol(row, CHQ_COLS.entry_type).toUpperCase();
-      const bank = getCol(row, CHQ_COLS.bank_detail);
-      const date = getCol(row, CHQ_COLS.cheque_date);
-      // Skip NILL total rows and zero-amount rows
-      if(amt <= 0 || (etype==='NILL' && !bank && !date)) return;
-      IMP.rows.push({
-        cust_name:   lastName,
-        plot_no:     lastPlot,
-        bank_detail: bank,
-        cheque_no:   getCol(row, CHQ_COLS.cheque_no),
-        cheque_date: getCol(row, CHQ_COLS.cheque_date),
-        amount:      amt,
-        entry_type:  getCol(row, CHQ_COLS.entry_type),
-      });
-    });
-  } else {
-    IMP.rows = dataRows.map(row=>{
-      const obj={};
-      Object.entries(colMap).forEach(([field, idx])=>{ obj[field] = getCol(row, idx); });
-      return obj;
-    }).filter(r => type==='bookings' ? r.client_name : type==='prev' ? r.client_name : r.cust_name);
-  }
-
-  setBtn('imp-parse-btn',false);
-
-  if(!IMP.rows.length){ toast('No valid rows found. Check the CSV format.','err'); return; }
-
-  // Preview table
-  const previewFields = {
-    bookings:['client_name','plot_no','agreement_value','bank_name','loan_status','disbursement_status','sanction_received'],
-    cheques: ['cust_name','plot_no','cheque_date','amount','entry_type','bank_detail'],
-    prev:    ['client_name','plot_no','plot_size','agreement_value'],
-  }[type]||[];
-
-  el('imp-preview-head').innerHTML='<tr>'+previewFields.map(c=>`<th style="padding:5px 10px;background:var(--paper);border:1px solid var(--border);white-space:nowrap;font-size:11px">${c}</th>`).join('')+'</tr>';
-  el('imp-preview-body').innerHTML=IMP.rows.slice(0,8).map(r=>`<tr>${previewFields.map(c=>`<td style="padding:4px 10px;border:1px solid var(--border);white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;font-size:12px">${esc(r[c]||'—')}</td>`).join('')}</tr>`).join('');
-  el('imp-count').textContent=IMP.rows.length;
-  el('imp-confirm').disabled=false;
-  hideEl('imp-s1'); showEl('imp-s2');
-}
-
-function parseCSV(text){
-  const rows=[];
-  let row=[], cell='', inQ=false;
-  const LF=10, CR=13, COMMA=44, QUOTE=34;
-  for(let i=0;i<text.length;i++){
-    const cc=text.charCodeAt(i);
-    if(inQ){
-      if(cc===QUOTE&&text.charCodeAt(i+1)===QUOTE){cell+='"';i++;}
-      else if(cc===QUOTE) inQ=false;
-      else cell+=text[i];
-    } else {
-      if(cc===QUOTE) inQ=true;
-      else if(cc===COMMA){row.push(cell);cell='';}
-      else if(cc===LF||cc===CR){
-        row.push(cell);cell='';
-        if(row.some(x=>x.trim())) rows.push(row);
-        row=[];
-        if(cc===CR&&text.charCodeAt(i+1)===LF) i++;
-      } else cell+=text[i];
-    }
-  }
-  if(cell||row.length){row.push(cell);if(row.some(x=>x.trim())) rows.push(row);}
-  return rows;
-}
-
-async function runImport(){
-  if(!IMP.rows.length){toast('No data to import','err');return;}
-  setBtn('imp-confirm',true);
-  showEl('imp-progress'); hideEl('imp-s2');
-  el('imp-prog-bar').style.width='0%';
-  let imported=0,errors=0;
-  const CHUNK=50;
-  const table=IMP.type==='bookings'?'bookings':IMP.type==='cheques'?'cheques':'prev_bookings';
-  
-  for(let i=0;i<IMP.rows.length;i+=CHUNK){
-    const chunk=IMP.rows.slice(i,i+CHUNK).map(r=>csvRowToDb(r,IMP.type,IMP.projId)).filter(Boolean);
-    if(!chunk.length) continue;
-    el('imp-prog-text').textContent=`Importing rows ${i+1}–${Math.min(i+CHUNK,IMP.rows.length)} of ${IMP.rows.length}…`;
-    const {error}=await sb.from(table).insert(chunk);
-    if(error){errors+=chunk.length;console.error(error.message);}
-    else imported+=chunk.length;
-    el('imp-prog-bar').style.width=Math.min(Math.round((i+CHUNK)/IMP.rows.length*100),99)+'%';
-  }
-  el('imp-prog-bar').style.width='100%';
-  await new Promise(r=>setTimeout(r,400));
-
-  setBtn('imp-confirm',false); hideEl('imp-progress'); showEl('imp-result');
-  el('imp-ok').textContent=imported; el('imp-err').textContent=errors;
-  if(imported>0&&S.curProj?.id===IMP.projId) await loadProjData();
-  toast(imported>0?`✓ Imported ${imported} records!`:'No records imported',imported>0?'ok':'err');
-  if(imported>0) await logAudit('IMPORT', IMP.type, null, '',
-    `Imported ${imported} ${IMP.type} records via CSV${errors>0?' ('+errors+' errors)':''}`);
-}
-
-function csvRowToDb(r, type, projId){
-  // Helper: get field value trying multiple possible column name variants
-  const g = (...keys) => {
-    for(const k of keys){
-      const v = r[k]||r[k.replace(/_/g,' ')]||r[k.replace(/_/g,'')]||'';
-      if(v) return v.trim();
-    }
-    return '';
-  };
-  const gn = (...keys) => { const v=g(...keys); const n=parseFloat(v.replace(/[₹,\s]/g,'')); return isNaN(n)?null:n; };
-  const gd = (...keys) => { const v=g(...keys); return csvDate(v); };
-
-  if(type==='bookings'){
-    const name = g('client_name'); if(!name) return null;
-    const disbRaw = g('disbursement_status');
-    return {
-      project_id:        projId,
-      serial_no:         parseInt(g('serial_no'))||null,
-      booking_date:      gd('booking_date'),
-      client_name:       name,
-      contact:           g('contact'),
-      plot_no:           g('plot_no'),
-      plot_size:         gn('plot_size'),
-      basic_rate:        gn('basic_rate'),
-      infra:             gn('infra')||100,
-      agreement_value:   gn('agreement_value'),
-      sdr:               gn('sdr'),
-      sdr_minus:         gn('sdr_minus')||0,
-      maintenance:       gn('maintenance')||0,
-      legal_charges:     gn('legal_charges')||25000,
-      bank_name:         g('bank_name'),
-      banker_contact:    g('banker_contact'),
-      loan_status:       g('loan_status')||'File Given',
-      sanction_received: g('sanction_received')||null,
-      sanction_date:     gd('sanction_date'),
-      sanction_letter:   g('sanction_letter')||null,
-      sdr_received:      gn('sdr_received'),
-      sdr_received_date: gd('sdr_received_date'),
-      disbursement_status: disbRaw==='done'?'done':null,
-      disbursement_date:   gd('disbursement_date'),
-      disbursement_remark: g('disbursement_remark'),
-      doc_submitted:     g('doc_submitted'),
-      remark:            g('remark'),
-    };
-  }
-  if(type==='cheques'){
-    const name=g('cust_name'); if(!name) return null;
-    const amt=gn('amount'); if(!amt||amt<=0) return null;
-    const et=g('entry_type','remark');
-    return {
-      project_id:  projId,
-      cust_name:   name,
-      plot_no:     g('plot_no'),
-      bank_detail: g('bank_detail'),
-      cheque_no:   g('cheque_no'),
-      cheque_date: gd('cheque_date'),
-      amount:      amt,
-      entry_type:  normEntry(et),
-    };
-  }
-  if(type==='prev'){
-    const name=g('client_name','customer_name_'); if(!name) return null;
-    return {
-      project_id:      projId,
-      client_name:     name,
-      plot_no:         g('plot_no','plot_number_'),
-      plot_size:       gn('plot_size','plot_size_'),
-      agreement_value: gn('agreement_value'),
-      notes:           g('notes'),
-    };
-  }
-  return null;
-}
-
-function csvDate(v){
-  if(!v||v==='nan'||v===''||v==='NaT') return null;
-  v = String(v).trim();
-  // Already YYYY-MM-DD
-  if(/^\d{4}-\d{2}-\d{2}/.test(v)) return v.substring(0,10);
-  // DD.MM.YYYY or DD/MM/YYYY or DD-MM-YYYY  → always day first
-  const m = v.match(/^(\d{1,2})[.\/\-](\d{1,2})[.\/\-](\d{2,4})$/);
-  if(m){
-    const day = m[1].padStart(2,'0');
-    const mon = m[2].padStart(2,'0');
-    const yr  = m[3].length===2 ? '20'+m[3] : m[3];
-    // Validate: month must be 1-12, day must be 1-31
-    if(parseInt(mon)>12 || parseInt(day)>31) return null;
-    return `${yr}-${mon}-${day}`;
-  }
-  // Excel serial number (e.g. 45678)
-  const n = parseFloat(v);
-  if(!isNaN(n) && n > 40000 && n < 60000){
-    const d = new Date(Math.round((n - 25569) * 86400 * 1000));
-    return d.toISOString().substring(0,10);
-  }
-  return null;
-}
-
-// ── IMPORT NORMALIZERS ───────────────────────────────────────
-function normLoanStatus(v){
-  if(!v) return 'File Given';
-  const vl=String(v).toLowerCase().trim();
-  if(vl==='done'||vl.includes('agreement completed')) return 'Agreement Completed';
-  if(vl.includes('disburs')&&vl.includes('done')) return 'Disbursement Done';
-  if(vl.includes('sanction received')||vl.includes('sanction reciv')||vl.includes('sanction recieved')) return 'Sanction Received';
-  if(vl.includes('cancel')) return 'Cancelled';
-  if(vl.includes('phase 2')||vl.includes('under process')||vl.includes('file under process')) return 'Under Process';
-  if(vl.includes('self fund')) return 'Under Process';
-  if(vl.includes('file given')||vl.includes('file submitted')||vl.includes('file subm')||vl.includes('bank')) return 'File Given';
-  return 'File Given';
-}
-function normEntry(v){
-  if(!v) return 'RPM';
-  const vl=String(v).toUpperCase().trim();
-  if(['RPM','SM','NILL','BOUNCE','Other'].includes(vl)||vl==='OTHER') return vl==='OTHER'?'Other':vl;
-  if(vl.includes('CASH')) return 'cash';
-  return 'RPM';
-}
-function toNum(v){ if(!v&&v!==0) return null; const n=parseFloat(String(v).replace(/[₹,\s]/g,'')); return isNaN(n)?null:n; }
-function toInt(v){ if(!v) return null; const n=parseInt(v); return isNaN(n)?null:n; }
-function toDate(v){
-  if(!v) return null;
-  const s=String(v).trim();
-  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0,10);
-  const m=s.match(/(\d{1,2})[.\/\-](\d{1,2})[.\/\-](\d{2,4})/);
-  if(m){const y=m[3].length===2?'20'+m[3]:m[3];return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;}
-  const n=parseFloat(v);
-  if(!isNaN(n)&&n>40000){const d=new Date(Math.round((n-25569)*86400*1000));return d.toISOString().substring(0,10);}
-  return null;
-}
-
-// ── CUSTOM FIELD INPUT ───────────────────────────────────────
-function cfInput(f,val,id){
-  if(f.field_type==='select'&&f.field_options?.length)
-    return `<select id="${id}"><option value="">—</option>${f.field_options.map(o=>`<option value="${o}"${val===o?' selected':''}>${esc(o)}</option>`).join('')}</select>`;
-  if(f.field_type==='textarea') return `<textarea id="${id}" rows="2">${esc(val)}</textarea>`;
-  if(f.field_type==='boolean')
-    return `<select id="${id}"><option value="">—</option><option value="Yes"${val==='Yes'?' selected':''}>Yes</option><option value="No"${val==='No'?' selected':''}>No</option></select>`;
-  return `<input type="${f.field_type==='number'?'number':f.field_type==='date'?'date':'text'}" id="${id}" value="${esc(val)}">`;
-}
-
-// ── UI COMPONENTS ────────────────────────────────────────────
-function sc(cls,icon,val,label,sub){ return `<div class="sc ${cls}"><div class="sc-blob"></div><div class="sc-icon">${icon}</div><div class="sc-val">${val}</div><div class="sc-label">${label}</div><div class="sc-sub">${sub}</div></div>`; }
-function triplet(items){ return `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px">${items.map(x=>`<div style="text-align:center;padding:12px 7px;background:${x.bg};border-radius:9px"><div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700;color:${x.c}">${x.v}</div><div style="font-size:9.5px;text-transform:uppercase;letter-spacing:1px;color:var(--inkf);margin-top:3px">${x.l}</div></div>`).join('')}</div>`; }
-function statusBadge(s){ const m={'Agreement Completed':'b-green','Disbursement Done':'b-green','Sanction Received':'b-blue','File Given':'b-gold','Under Process':'b-teal','Cancelled':'b-rose'}; return `<span class="badge ${m[s]||'b-gray'}">${s||'—'}</span>`; }
-function chqBadge(t){ return {RPM:'b-blue',SM:'b-gold',BOUNCE:'b-rose',NILL:'b-gray',cash:'b-teal',Other:'b-gray'}[t]||'b-gray'; }
-
-function showCSVGuide(){showEl('csv-guide');}
-
-// ── AUDIT LOG ────────────────────────────────────────────────
-async function writeLog(action, entity, entityId, entityLabel, changes={}) {
-  if (!S.profile || !S.curProj) return;
-  try {
-    await sb.from('audit_log').insert({
-      project_id:   S.curProj.id,
-      user_id:      S.user.id,
-      user_name:    S.profile.full_name,
-      user_role:    S.profile.role,
-      action,        // 'create' | 'update' | 'cancel' | 'delete' | 'import'
-      entity,        // 'booking' | 'cheque' | 'prev_booking'
-      entity_id:    entityId  || null,
-      entity_label: entityLabel || '',
-      changes:      changes,
-    });
-  } catch(e) { console.warn('Audit log failed:', e.message); }
-}
-
-function diffObjects(oldObj, newObj, fields) {
-  const changes = {};
-  fields.forEach(f => {
-    const o = String(oldObj[f]??''), n = String(newObj[f]??'');
-    if (o !== n) changes[f] = { old: o, new: n };
-  });
-  return changes;
-}
-
-// ── RENDER AUDIT LOG ─────────────────────────────────────────
-async function renderAuditLog(projectId) {
-  const containerId = projectId ? 'saAuditList' : 'auditList';
-  const container = el(containerId);
-  if (!container) return;
-  container.innerHTML = `<div class="lc"><div class="spin spin-dk"></div> Loading…</div>`;
-
-  let query = sb.from('audit_log').select('*').order('created_at', {ascending: false}).limit(200);
-  if (projectId) query = query.eq('project_id', projectId);
-  else if (S.curProj) query = query.eq('project_id', S.curProj.id);
-
-  const { data, error } = await query;
-  if (error) { container.innerHTML = `<div class="empty"><p>Error loading log</p></div>`; return; }
-  if (!data?.length) { container.innerHTML = `<div class="empty"><div class="ei">📋</div><h3>No activity yet</h3><p>Actions will appear here</p></div>`; return; }
-
-  const actionColor = { create:'var(--sage)', update:'var(--sky)', cancel:'var(--gold)', delete:'var(--rose)', import:'var(--teal)' };
-  const actionIcon  = { create:'＋', update:'✏', cancel:'✕', delete:'🗑', import:'📥' };
-
-  container.innerHTML = data.map(log => {
-    const dt = new Date(log.created_at);
-    const dateStr = dt.toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'});
-    const timeStr = dt.toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'});
-    const color = actionColor[log.action] || 'var(--inkf)';
-    const icon  = actionIcon[log.action]  || '•';
-    const changesHTML = Object.keys(log.changes||{}).length ?
-      `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:5px">${
-        Object.entries(log.changes).map(([f,[o,n]])=>
-          `<span style="font-size:10px;padding:2px 7px;background:var(--paper2);border-radius:4px;border:1px solid var(--border)">
-            <span style="color:var(--inkf)">${f}:</span>
-            <span style="color:var(--rose);text-decoration:line-through">${esc(String(o?.old??''))}</span>
-            → <span style="color:var(--sage)">${esc(String(o?.new??''))}</span>
-          </span>`
-        ).join('')
-      }</div>` : '';
-    return `<div style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
-      <div style="width:32px;height:32px;border-radius:50%;background:${color}22;border:1.5px solid ${color};display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;color:${color}">${icon}</div>
+    const color = aColor[log.action] || 'var(--inkf)';
+    const icon  = aIcon[log.action]  || '•';
+    const changes = log.changes || {};
+    const changeKeys = Object.keys(changes);
+    const changesHTML = changeKeys.length
+      ? `<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">
+          ${changeKeys.slice(0,6).map(f => {
+            const entry = changes[f];
+            const oldV = entry?.old ?? '';
+            const newV = entry?.new ?? '';
+            return `<span style="font-size:10px;padding:2px 7px;background:var(--paper2);border-radius:4px;border:1px solid var(--border)">
+              <span style="color:var(--inkf)">${esc(f)}:</span>
+              <span style="color:var(--rose)">${esc(String(oldV).substring(0,20))}</span>
+              → <span style="color:var(--sage)">${esc(String(newV).substring(0,20))}</span>
+            </span>`;
+          }).join('')}
+        </div>` : '';
+    return `<div style="display:flex;gap:12px;padding:11px 0;border-bottom:1px solid var(--border)">
+      <div style="width:32px;height:32px;border-radius:50%;background:${color}22;border:1.5px solid ${color};display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;color:${color};font-weight:700">${icon}</div>
       <div style="flex:1;min-width:0">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
           <span style="font-weight:600;font-size:13px">${esc(log.user_name)}</span>
-          <span class="role-pill rp-${log.user_role}" style="font-size:10px">${log.user_role}</span>
-          <span style="font-size:12px;color:${color};font-weight:600;text-transform:uppercase;letter-spacing:.5px">${log.action}</span>
+          <span class="role-pill rp-${log.user_role}">${log.user_role}</span>
+          <span style="font-size:12px;background:${color}22;color:${color};padding:1px 8px;border-radius:4px;font-weight:600">${log.action}</span>
           <span style="font-size:12px;color:var(--inkf)">${log.entity}</span>
           <span style="font-size:12px;font-weight:500">${esc(log.entity_label||'')}</span>
         </div>
         ${changesHTML}
       </div>
-      <div style="text-align:right;flex-shrink:0">
+      <div style="text-align:right;flex-shrink:0;white-space:nowrap">
         <div style="font-size:11px;font-weight:600;color:var(--inkl)">${dateStr}</div>
         <div style="font-size:11px;color:var(--inkf)">${timeStr}</div>
       </div>
@@ -1927,51 +1420,318 @@ async function renderAuditLog(projectId) {
   }).join('');
 }
 
-async function renderProjectAudit() {
-  await renderAuditLog(null);
+// ── EXCEL WORKBOOK IMPORT ────────────────────────────────────
+// Accepts the full SOTR workbook (.xlsx) and imports all sheets at once
+const IMP = { wb: null, projId: '', parsed: {} };
+
+function renderImportPage() {
+  sb.from('projects').select('id,name').order('name').then(({ data }) => {
+    el('imp-proj').innerHTML = '<option value="">— Select Project —</option>' +
+      (data||[]).map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  });
+  resetImport();
 }
 
-async function renderSAAudit() {
-  // SA sees ALL projects' logs
-  const container = el('saAuditList');
-  if (!container) return;
-  container.innerHTML = `<div class="lc"><div class="spin spin-dk"></div> Loading…</div>`;
-  const { data, error } = await sb.from('audit_log')
-    .select('*, projects(name)')
-    .order('created_at', {ascending:false})
-    .limit(500);
-  if (error || !data?.length) {
-    container.innerHTML = `<div class="empty"><div class="ei">📋</div><h3>No activity yet</h3></div>`;
+function resetImport() {
+  IMP.wb = null; IMP.projId = ''; IMP.parsed = {};
+  showEl('imp-s1'); hideEl('imp-s2'); hideEl('imp-s3'); hideEl('imp-result');
+  const fi = el('imp-file'); if (fi) fi.value = '';
+  el('imp-fname').textContent = '';
+  el('imp-parse-btn').disabled = true;
+}
+
+function onFileChange(input) {
+  const file = input.files[0]; if (!file) return;
+  el('imp-fname').textContent = '📊 ' + file.name;
+  el('imp-parse-btn').disabled = false;
+}
+
+async function parseFile() {
+  const file   = el('imp-file').files[0];
+  const projId = el('imp-proj').value;
+  if (!file)   { toast('Select a file', 'err'); return; }
+  if (!projId) { toast('Select a project', 'err'); return; }
+  if (typeof XLSX === 'undefined') { toast('Excel library not loaded — refresh page', 'err'); return; }
+
+  IMP.projId = projId;
+  setBtn('imp-parse-btn', true);
+  el('imp-fname').textContent = '⏳ Reading workbook…';
+
+  try {
+    const buf = await file.arrayBuffer();
+    IMP.wb = XLSX.read(buf, { type: 'array', cellDates: true, raw: false });
+  } catch(e) {
+    toast('Could not read file: ' + e.message, 'err');
+    setBtn('imp-parse-btn', false);
     return;
   }
-  const actionColor = { create:'var(--sage)', update:'var(--sky)', cancel:'var(--gold)', delete:'var(--rose)', import:'var(--teal)' };
-  const actionIcon  = { create:'＋', update:'✏', cancel:'✕', delete:'🗑', import:'📥' };
-  // Group by project
-  const byProject = {};
-  data.forEach(log => {
-    const pname = log.projects?.name || 'Unknown Project';
-    if (!byProject[pname]) byProject[pname] = [];
-    byProject[pname].push(log);
-  });
-  container.innerHTML = Object.entries(byProject).map(([pname, logs]) => `
-    <div style="margin-bottom:24px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--gold);padding:8px 0;border-bottom:2px solid var(--goldb);margin-bottom:8px">🏗 ${esc(pname)}</div>
-      ${logs.map(log => {
-        const dt = new Date(log.created_at);
-        const color = actionColor[log.action] || 'var(--inkf)';
-        const icon  = actionIcon[log.action]  || '•';
-        return `<div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
-          <div style="width:28px;height:28px;border-radius:50%;background:${color}22;border:1.5px solid ${color};display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;color:${color}">${icon}</div>
-          <div style="flex:1">
-            <span style="font-weight:600;font-size:12px">${esc(log.user_name)}</span>
-            <span class="role-pill rp-${log.user_role}" style="font-size:9px;margin:0 5px">${log.user_role}</span>
-            <span style="font-size:12px;color:${color};font-weight:600">${log.action}</span>
-            <span style="font-size:12px;color:var(--inkf)"> ${log.entity} </span>
-            <span style="font-size:12px">${esc(log.entity_label||'')}</span>
-          </div>
-          <div style="font-size:11px;color:var(--inkf);flex-shrink:0">${dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})} ${dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>
-        </div>`;
-      }).join('')}
-    </div>`).join('');
+
+  IMP.parsed = {};
+  const sheets = IMP.wb.SheetNames;
+
+  // ── Process BWxSOTR → bookings ──────────────────────────────
+  const bwSheet = sheets.find(s => s.toLowerCase().includes('bwxsotr') || s.toLowerCase().includes('bw'));
+  if (bwSheet) {
+    IMP.parsed.bookings = parseBWxSOTR(IMP.wb.Sheets[bwSheet]);
+  }
+
+  // ── Process Cheque details → cheques ───────────────────────
+  const chqSheet = sheets.find(s => s.toLowerCase().includes('cheque'));
+  if (chqSheet) {
+    IMP.parsed.cheques = parseCheques(IMP.wb.Sheets[chqSheet]);
+  }
+
+  // ── Process Previous Team Bookings → prev_bookings ─────────
+  const prevSheet = sheets.find(s => s.toLowerCase().includes('previous') || s.toLowerCase().includes('prev'));
+  if (prevSheet) {
+    IMP.parsed.prev = parsePrevTeam(IMP.wb.Sheets[prevSheet]);
+  }
+
+  setBtn('imp-parse-btn', false);
+
+  const bkCount  = IMP.parsed.bookings?.length || 0;
+  const chqCount = IMP.parsed.cheques?.length  || 0;
+  const prvCount = IMP.parsed.prev?.length     || 0;
+  const total    = bkCount + chqCount + prvCount;
+
+  if (!total) { toast('No valid data found in workbook', 'err'); return; }
+
+  // Show preview
+  el('imp-summary').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+      ${bkCount ? `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--paper);border:1px solid var(--border);border-radius:8px">
+        <span style="font-size:20px">🏡</span>
+        <div style="flex:1"><div style="font-weight:600">Bookings (BWxSOTR)</div><div style="font-size:12px;color:var(--inkf)">Sheet: ${bwSheet}</div></div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700">${bkCount}</div>
+        <div style="font-size:12px;color:var(--inkf)">rows</div>
+      </div>` : '<div style="padding:10px 16px;color:var(--rose);font-size:13px;border:1px solid var(--border);border-radius:8px">⚠️ No BWxSOTR sheet found</div>'}
+      ${chqCount ? `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--paper);border:1px solid var(--border);border-radius:8px">
+        <span style="font-size:20px">🧾</span>
+        <div style="flex:1"><div style="font-weight:600">Cheques</div><div style="font-size:12px;color:var(--inkf)">Sheet: ${chqSheet}</div></div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700">${chqCount}</div>
+        <div style="font-size:12px;color:var(--inkf)">rows</div>
+      </div>` : '<div style="padding:10px 16px;color:var(--inkf);font-size:13px;border:1px solid var(--border);border-radius:8px">ℹ️ No Cheque details sheet found</div>'}
+      ${prvCount ? `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--paper);border:1px solid var(--border);border-radius:8px">
+        <span style="font-size:20px">📁</span>
+        <div style="flex:1"><div style="font-weight:600">Previous Team Bookings</div><div style="font-size:12px;color:var(--inkf)">Sheet: ${prevSheet}</div></div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700">${prvCount}</div>
+        <div style="font-size:12px;color:var(--inkf)">rows</div>
+      </div>` : ''}
+    </div>
+    <div style="padding:12px 16px;background:var(--goldl);border:1px solid var(--goldb);border-radius:8px;display:flex;gap:12px;align-items:center">
+      <span style="font-size:20px">📥</span>
+      <div><strong>Total: ${total} records ready to import</strong><br><span style="font-size:12px;color:var(--inkl)">Existing data will NOT be deleted. Duplicate entries may be created if run twice.</span></div>
+    </div>`;
+
+  el('imp-total').textContent = total;
+  el('imp-confirm').disabled = false;
+  hideEl('imp-s1'); showEl('imp-s2');
 }
+
+// ── SHEET PARSERS ─────────────────────────────────────────────
+
+function sheetToRows(ws) {
+  return XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+}
+
+function cellVal(row, idx) {
+  const v = row[idx];
+  if (v === undefined || v === null) return '';
+  return String(v).replace(/‪|‬/g, '').replace(/ /g, ' ').trim();
+}
+
+function cellNum(row, idx) {
+  const v = cellVal(row, idx);
+  if (!v || v === 'nan') return null;
+  const n = parseFloat(v.replace(/[₹,\s]/g, ''));
+  return isNaN(n) ? null : n;
+}
+
+function cellDate(row, idx) {
+  const v = cellVal(row, idx);
+  if (!v || v === 'nan' || v === 'NaT') return null;
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}/.test(v)) return v.substring(0, 10);
+  // DD.MM.YYYY or DD/MM/YYYY
+  const m = v.match(/^(\d{1,2})[.\/\-](\d{1,2})[.\/\-](\d{2,4})$/);
+  if (m) {
+    const day = m[1].padStart(2,'0'), mon = m[2].padStart(2,'0');
+    const yr  = m[3].length === 2 ? '20' + m[3] : m[3];
+    if (parseInt(mon) > 12 || parseInt(day) > 31) return null;
+    return `${yr}-${mon}-${day}`;
+  }
+  // Excel serial
+  const n = parseFloat(v);
+  if (!isNaN(n) && n > 40000 && n < 60000) {
+    return new Date(Math.round((n - 25569) * 86400000)).toISOString().substring(0, 10);
+  }
+  return null;
+}
+
+function normBank(v) {
+  if (!v) return '';
+  const vl = v.toLowerCase();
+  if (vl.includes('axis'))  return 'Axis';
+  if (vl.includes('hdfc'))  return 'HDFC';
+  if (vl.includes('idbi'))  return 'IDBI';
+  if (vl.includes('icici')) return 'ICICI';
+  if (vl.includes('sbi'))   return 'SBI';
+  if (vl.includes('tata'))  return 'Tata Capital';
+  if (vl === 'self' || vl === '...' || vl === '---') return 'Self';
+  if (vl.includes('phase 2')) return 'Phase 2';
+  return v.trim();
+}
+
+function parseBWxSOTR(ws) {
+  const allRows = sheetToRows(ws);
+  // Row 0 = headers, Row 1 = totals line (skip), Row 2+ = data
+  const rows = allRows.slice(2).filter(r => {
+    const name = cellVal(r, 2);
+    return name && name !== 'nan' && name.trim() !== '';
+  });
+
+  return rows.map(r => {
+    const agreeRaw = cellVal(r, 18);
+    const disbRaw  = cellVal(r, 34);
+    const agreeL   = agreeRaw.toLowerCase().trim();
+    const disbL    = disbRaw.toLowerCase().trim().replace(/[^a-z]/g,'');
+    const isDisbDone = agreeL === 'done' || disbL === 'done';
+
+    return {
+      serial_no:           cellNum(r, 0) ? parseInt(cellVal(r,0)) : null,
+      booking_date:        cellDate(r, 1),
+      client_name:         cellVal(r, 2),
+      contact:             cellVal(r, 3),
+      plot_no:             cellVal(r, 4),
+      plot_size:           cellNum(r, 5),
+      basic_rate:          cellNum(r, 6),
+      infra:               cellNum(r, 7) ?? 100,
+      agreement_value:     cellNum(r, 10),
+      sdr:                 cellNum(r, 11),
+      sdr_minus:           cellNum(r, 12) ?? 0,
+      maintenance:         cellNum(r, 13) ?? 0,
+      legal_charges:       cellNum(r, 14) ?? 25000,
+      bank_name:           normBank(cellVal(r, 21)),
+      banker_contact:      cellVal(r, 33),
+      loan_status:         normLoanStatus(agreeRaw),
+      sanction_received:   cellVal(r, 30).toLowerCase().startsWith('y') ? 'Yes' : null,
+      sanction_date:       cellDate(r, 31),
+      sanction_letter:     cellVal(r, 32) || null,
+      sdr_received:        cellNum(r, 28),
+      sdr_received_date:   cellDate(r, 29),
+      disbursement_status: isDisbDone ? 'done' : null,
+      disbursement_date:   cellDate(r, 35),
+      disbursement_remark: (!isDisbDone && disbRaw && disbL !== '') ? disbRaw : '',
+      doc_submitted:       cellVal(r, 37),
+      remark:              cellVal(r, 36),
+    };
+  }).filter(r => r.client_name);
+}
+
+function parseCheques(ws) {
+  const allRows = sheetToRows(ws);
+  const rows = allRows.slice(1); // skip header row 0
+
+  const result = [];
+  let lastName = '', lastPlot = '';
+
+  rows.forEach(r => {
+    const name   = cellVal(r, 0);
+    const plot   = cellVal(r, 1);
+    const bank   = cellVal(r, 2);
+    const chqno  = cellVal(r, 3);
+    const date   = cellVal(r, 4);
+    const amtRaw = cellVal(r, 5);
+    const remark = cellVal(r, 6);
+
+    // Update running customer name/plot
+    if (name && name !== 'nan') {
+      lastName = name;
+      if (plot && !['infra chrg','infra charge'].includes(plot.toLowerCase()) && plot !== 'nan') {
+        lastPlot = plot;
+      }
+    }
+
+    const amount = parseFloat(amtRaw.replace(/[₹,\s]/g,'')) || 0;
+    const entryType = normEntry(remark);
+
+    // Skip NILL total rows and zero amounts
+    const isTotal = entryType === 'NILL' && !bank && !date;
+    if (isTotal || amount <= 0 || !lastName) return;
+
+    // Normalize date
+    let chequeDate = null;
+    if (date && !['cash recv','rtgs done','nan',''].includes(date.toLowerCase())) {
+      const dm = date.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{2,4})$/);
+      if (dm) {
+        const y = dm[3].length===2?'20'+dm[3]:dm[3];
+        chequeDate = `${y}-${dm[2].padStart(2,'0')}-${dm[1].padStart(2,'0')}`;
+      }
+    }
+
+    result.push({
+      cust_name:   lastName,
+      plot_no:     lastPlot,
+      bank_detail: bank,
+      cheque_no:   chqno,
+      cheque_date: chequeDate,
+      amount:      amount,
+      entry_type:  entryType,
+    });
+  });
+
+  return result;
+}
+
+function parsePrevTeam(ws) {
+  const allRows = sheetToRows(ws);
+  return allRows.slice(1)
+    .filter(r => cellVal(r,0) && cellVal(r,0) !== 'nan')
+    .map(r => ({
+      client_name:     cellVal(r, 0),
+      plot_no:         cellVal(r, 1),
+      plot_size:       cellNum(r, 2),
+      agreement_value: cellNum(r, 3),
+      notes:           '',
+    }));
+}
+
+async function runImport() {
+  const projId = IMP.projId; if (!projId) return;
+  setBtn('imp-confirm', true);
+  showEl('imp-progress'); hideEl('imp-s2');
+
+  let imported = 0, errors = 0;
+
+  const tasks = [
+    { table: 'bookings',     rows: IMP.parsed.bookings || [],  label: 'Bookings' },
+    { table: 'cheques',      rows: IMP.parsed.cheques  || [],  label: 'Cheques'  },
+    { table: 'prev_bookings',rows: IMP.parsed.prev     || [],  label: 'Prev Team'},
+  ];
+
+  for (const task of tasks) {
+    if (!task.rows.length) continue;
+    el('imp-prog-text').textContent = `Importing ${task.label} (${task.rows.length} rows)…`;
+    const CHUNK = 50;
+    for (let i = 0; i < task.rows.length; i += CHUNK) {
+      const chunk = task.rows.slice(i, i+CHUNK).map(r => ({ ...r, project_id: projId }));
+      const { error } = await sb.from(task.table).insert(chunk);
+      if (error) { errors += chunk.length; console.error(task.table, error.message); }
+      else imported += chunk.length;
+      const pct = Math.round(((tasks.indexOf(task) + i/task.rows.length) / tasks.length) * 100);
+      el('imp-prog-bar').style.width = Math.min(pct, 98) + '%';
+    }
+  }
+
+  el('imp-prog-bar').style.width = '100%';
+  await new Promise(r => setTimeout(r, 400));
+  setBtn('imp-confirm', false);
+  hideEl('imp-progress'); showEl('imp-result');
+  el('imp-ok').textContent  = imported;
+  el('imp-err').textContent = errors;
+  if (imported > 0 && S.curProj?.id === projId) await loadProjData();
+  if (imported > 0) await writeLog('import', 'workbook', null, `${imported} records from Excel`);
+  toast(imported > 0 ? `✓ Imported ${imported} records!` : 'No records imported', imported > 0 ? 'ok' : 'err');
+}
+
 

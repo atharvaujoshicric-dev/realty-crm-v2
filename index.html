@@ -144,6 +144,92 @@
 
     <!-- SA: IMPORT -->
     <div class="page" id="p-sa-import">
+      <div class="ph">
+        <div><h1>Import from Excel</h1><p>Upload your full SOTR workbook — all sheets imported at once</p></div>
+      </div>
+
+      <!-- Step 1: Upload -->
+      <div id="imp-s1">
+        <div class="card" style="max-width:600px">
+          <div class="card-hd"><span class="card-hd-title">Upload Workbook (.xlsx)</span></div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
+            <div class="fg"><label>Target Project *</label>
+              <select id="imp-proj"><option value="">— Select Project —</option></select>
+            </div>
+            <div class="fg"><label>Excel Workbook *</label>
+              <div class="drop-zone" onclick="el('imp-file').click()"
+                ondragover="event.preventDefault();this.classList.add('drag-over')"
+                ondragleave="this.classList.remove('drag-over')"
+                ondrop="event.preventDefault();this.classList.remove('drag-over');el('imp-file').files=event.dataTransfer.files;onFileChange(el('imp-file'))">
+                <div style="font-size:36px;margin-bottom:8px">📊</div>
+                <div style="font-weight:600;font-size:14px;margin-bottom:4px">Click or drag & drop your .xlsx file</div>
+                <div style="font-size:12px;color:var(--inkf)">Reads BWxSOTR, Cheque details and Previous Team Bookings sheets automatically</div>
+                <div id="imp-fname" style="margin-top:10px;font-size:13px;color:var(--gold);font-weight:600"></div>
+              </div>
+              <input type="file" id="imp-file" accept=".xlsx,.xls" style="display:none" onchange="onFileChange(this)">
+            </div>
+            <div style="padding:11px 14px;background:var(--paper);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--inkl)">
+              <strong>Sheets detected automatically:</strong><br>
+              🏡 <strong>BWxSOTR</strong> → Bookings (48 customers, all loan/bank/SDR details)<br>
+              🧾 <strong>Cheque details</strong> → Cheques (all RPM/SM/cash entries)<br>
+              📁 <strong>Previous Team Bookings</strong> → Legacy records
+            </div>
+            <button class="btn btn-gold" id="imp-parse-btn" onclick="parseFile()" disabled>Read Workbook →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: Preview & Confirm -->
+      <div id="imp-s2" style="display:none">
+        <div class="card" style="max-width:640px">
+          <div class="card-hd">
+            <span class="card-hd-title">Review & Confirm</span>
+            <button class="btn btn-outline btn-sm" onclick="resetImport()">← Back</button>
+          </div>
+          <div class="card-body">
+            <div id="imp-summary"></div>
+            <div id="imp-progress" style="display:none;margin:14px 0">
+              <div id="imp-prog-text" style="font-size:13px;color:var(--inkl);margin-bottom:6px"></div>
+              <div style="height:8px;background:var(--paper2);border-radius:4px;overflow:hidden">
+                <div id="imp-prog-bar" style="height:100%;width:0%;background:var(--gold);border-radius:4px;transition:width .3s"></div>
+              </div>
+            </div>
+            <button class="btn btn-gold" id="imp-confirm" onclick="runImport()" disabled>🚀 Import All Data</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Result -->
+      <div id="imp-result" style="display:none">
+        <div class="card" style="max-width:460px">
+          <div class="card-body" style="text-align:center;padding:32px">
+            <div style="font-size:44px;margin-bottom:14px">✅</div>
+            <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700;margin-bottom:5px"><span id="imp-ok">0</span> records imported</div>
+            <div style="font-size:13px;color:var(--inkf);margin-bottom:20px"><span id="imp-err">0</span> errors</div>
+            <div style="display:flex;gap:9px;justify-content:center">
+              <button class="btn btn-outline" onclick="resetImport()">Import Another</button>
+              <button class="btn btn-gold" onclick="navigate('p-sa-proj')">View Projects →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SA: AUDIT LOG -->
+    <div class="page" id="p-sa-audit">
+      <div class="ph">
+        <div><h1>Platform Audit Log</h1><p>Every action by every user across all projects</p></div>
+        <div class="ph-r"><button class="btn btn-outline btn-sm" onclick="renderSAAudit()">↻ Refresh</button></div>
+      </div>
+      <div class="card">
+        <div class="card-body" id="saAuditList" style="max-height:680px;overflow-y:auto">
+          <div class="lc"><div class="spin spin-dk"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SA: IMPORT -->
+    <div class="page" id="p-sa-import">
       <div class="ph"><div><h1>Import from CSV</h1><p>Upload a CSV file to import bookings, cheques or previous team records</p></div>
         <div class="ph-r"><a href="#" onclick="showCSVGuide()" class="btn btn-outline btn-sm">📋 Download CSV Templates</a></div>
       </div>

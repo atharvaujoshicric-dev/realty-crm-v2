@@ -735,12 +735,15 @@ async function removeProjUser(uid, pid) {
 function renderDash() {
   const bk = S.bookings; updateProjHeader();
   const totalVal = sum(bk,'agreement_value');
-  const disb = bk.filter(b => b.disbursement_status === 'done').length;
-  const pend = bk.filter(b => b.loan_status!=='Cancelled' && b.disbursement_status!=='done' && b.sanction_received!=='Yes').length;
+  const agreed  = bk.filter(b => b.loan_status === 'Agreement Completed').length;
+  const disb    = bk.filter(b => b.disbursement_status === 'done').length;
+  const pend    = bk.filter(b => b.loan_status!=='Cancelled' && b.loan_status!=='Agreement Completed' && b.disbursement_status!=='done').length;
+  const sanc    = bk.filter(b => b.sanction_received === 'Yes').length;
   el('dashStats').innerHTML = `
-    ${sc('sc-gold','🏡',bk.length,'Total Bookings','Active agreements')}
+    ${sc('sc-gold','🏡',bk.length,'Total Bookings','All bookings')}
     ${sc('sc-teal','💰','₹'+fmtCr(totalVal),'Total Value','Agreement value')}
-    ${sc('sc-sky','✅',disb,'Disbursed','Loans completed')}
+    ${sc('sc-sky','✅',agreed,'Agreements Done','Fully completed')}
+    ${sc('sc-sage','🏦',sanc,'Sanctions','Received')}
     ${sc('sc-rose','⏳',pend,'Pending Files','Awaiting action')}`;
   el('dashRecent').innerHTML = [...bk].reverse().slice(0,7).map(b => `<tr>
     <td class="td-link" onclick="viewBk('${b.id}')">${esc(b.client_name)}</td>
@@ -819,7 +822,10 @@ function renderPipeline() {
   const stages = {'File Given':[],'Under Process':[],'Sanction Received':[],'Disbursement Done':[],'Agreement Completed':[]};
   bk.forEach(b => {
     if (b.loan_status==='Cancelled') return;
-    const k = b.disbursement_status==='done' ? 'Disbursement Done' : b.loan_status;
+    // Agreement Completed takes priority - don't override with disbursement status
+    const k = b.loan_status === 'Agreement Completed' ? 'Agreement Completed'
+            : b.disbursement_status === 'done'        ? 'Disbursement Done'
+            : b.loan_status;
     (stages[k] || stages['Under Process']).push(b);
   });
   const total = bk.filter(b=>b.loan_status!=='Cancelled').length;
@@ -1609,7 +1615,7 @@ function parseBWxSOTR(ws) {
       legal_charges:       cellNum(r, 14) ?? 25000,
       bank_name:           normBank(cellVal(r, 21)),
       banker_contact:      cellVal(r, 33),
-      loan_status:         normLoanStatus(agreeRaw),
+      loan_status:         agreeL === 'done' ? 'Agreement Completed' : normLoanStatus(agreeRaw),
       sanction_received:   cellVal(r, 30).toLowerCase().startsWith('y') ? 'Yes' : null,
       sanction_date:       cellDate(r, 31),
       sanction_letter:     cellVal(r, 32) || null,
@@ -1712,8 +1718,11 @@ async function runImport() {
     for (let i = 0; i < task.rows.length; i += CHUNK) {
       const chunk = task.rows.slice(i, i+CHUNK).map(r => ({ ...r, project_id: projId }));
       const { error } = await sb.from(task.table).insert(chunk);
-      if (error) { errors += chunk.length; console.error(task.table, error.message); }
-      else imported += chunk.length;
+      if (error) {
+        errors += chunk.length;
+        console.error(task.table, error.message, error.details || '');
+        el('imp-prog-text').textContent = `⚠️ Error: ${error.message}`;
+      } else { imported += chunk.length; }
       const pct = Math.round(((tasks.indexOf(task) + i/task.rows.length) / tasks.length) * 100);
       el('imp-prog-bar').style.width = Math.min(pct, 98) + '%';
     }

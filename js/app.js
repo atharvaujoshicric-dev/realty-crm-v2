@@ -1548,27 +1548,22 @@ function onFileChange(input){
   el('imp-parse-btn').disabled=false;
 }
 
-// ── EXACT COLUMN INDEX MAPS (position-based, ignores header text) ──
-// Bookings: based on BWxSOTR exact column positions
+// ── COLUMN MAPS ─────────────────────────────────────────────
+// Bookings CSV (our pre-processed CSV with named headers)
 const BK_COLS = {
   serial_no:0, booking_date:1, client_name:2, contact:3,
   plot_no:4, plot_size:5, basic_rate:6, infra:7,
-  // col 8=basic amount (calculated), 9=BASIC+INFRA (calculated) — skip
-  agreement_value:10, sdr:11, sdr_minus:12, maintenance:13, legal_charges:14,
-  // col 15=total cost, 16=received, 17=remaining — skip
-  loan_status:18,
-  // col 19=financing option, 20=loan amount sanctioned — skip
-  bank_name:21,
-  // col 22-27 = OCR / file submitted fields — skip
-  sdr_received:28, sdr_received_date:29,
-  sanction_received:30, sanction_date:31, sanction_letter:32,
-  banker_contact:33, disbursement_status:34, disbursement_date:35,
-  remark:36, doc_submitted:37,
+  agreement_value:8, sdr:9, sdr_minus:10, maintenance:11, legal_charges:12,
+  bank_name:13, banker_contact:14, loan_status:15,
+  sanction_received:16, sanction_date:17, sanction_letter:18,
+  sdr_received:19, sdr_received_date:20,
+  disbursement_status:21, disbursement_date:22, disbursement_remark:23,
+  doc_submitted:24, remark:25,
+  // extra cols — present in our CSV, safe to include
+  loan_amount:26, ocr_received:27, file_submitted_bank:28, file_submitted_date:29,
 };
-// Cheques: CUST NAME, PLOT NO, BANK DETAIL, CHQ NO, CHQ DATE, AMOUNT, REMARK
-const CHQ_COLS = { cust_name:0, plot_no:1, bank_detail:2, cheque_no:3, cheque_date:4, amount:5, entry_type:6 };
-// Prev Team: Customer Name, Plot Number, Plot Size, Agreement Value
-const PREV_COLS = { client_name:0, plot_no:1, plot_size:2, agreement_value:3 };
+const CHQ_COLS  = { cust_name:0, plot_no:1, bank_detail:2, cheque_no:3, cheque_date:4, amount:5, entry_type:6 };
+const PREV_COLS = { client_name:0, plot_no:1, plot_size:2, agreement_value:3, notes:4 };
 
 async function parseFile(){
   const file=el('imp-file').files[0];
@@ -1715,38 +1710,36 @@ function csvRowToDb(r, type, projId){
   const gd = (...keys) => { const v=g(...keys); return csvDate(v); };
 
   if(type==='bookings'){
-    const name = g('client_name','name'); if(!name) return null;
-    const agreeRaw = g('loan_status','agreement_status');
-    const disbRaw  = g('disbursement_status');
-    const disbDone = disbRaw.toLowerCase()==='done' || agreeRaw.toLowerCase()==='agreement completed';
+    const name = g('client_name'); if(!name) return null;
+    const disbRaw = g('disbursement_status');
     return {
-      project_id:      projId,
-      serial_no:       parseInt(g('serial_no','no'))||null,
-      booking_date:    gd('booking_date','date'),
-      client_name:     name,
-      contact:         g('contact','contact_no'),
-      plot_no:         g('plot_no','plot_no_'),
-      plot_size:       gn('plot_size'),
-      basic_rate:      gn('basic_rate'),
-      infra:           gn('infra')||100,
-      agreement_value: gn('agreement_value','agreement_value_'),
-      sdr:             gn('sdr'),
-      sdr_minus:       gn('sdr_minus','sdr-')||0,
-      maintenance:     gn('maintenance','maintenance_')||0,
-      legal_charges:   gn('legal_charges','legal_charges_')||25000,
-      bank_name:       g('bank_name'),
-      banker_contact:  g('banker_contact'),
-      loan_status:     normLoanStatus(agreeRaw),
-      sanction_received: g('sanction_received').toLowerCase().startsWith('y')?'Yes':null,
-      sanction_date:   gd('sanction_date'),
-      sanction_letter: g('sanction_letter')||null,
-      sdr_received:    gn('sdr_received'),
+      project_id:        projId,
+      serial_no:         parseInt(g('serial_no'))||null,
+      booking_date:      gd('booking_date'),
+      client_name:       name,
+      contact:           g('contact'),
+      plot_no:           g('plot_no'),
+      plot_size:         gn('plot_size'),
+      basic_rate:        gn('basic_rate'),
+      infra:             gn('infra')||100,
+      agreement_value:   gn('agreement_value'),
+      sdr:               gn('sdr'),
+      sdr_minus:         gn('sdr_minus')||0,
+      maintenance:       gn('maintenance')||0,
+      legal_charges:     gn('legal_charges')||25000,
+      bank_name:         g('bank_name'),
+      banker_contact:    g('banker_contact'),
+      loan_status:       g('loan_status')||'File Given',
+      sanction_received: g('sanction_received')||null,
+      sanction_date:     gd('sanction_date'),
+      sanction_letter:   g('sanction_letter')||null,
+      sdr_received:      gn('sdr_received'),
       sdr_received_date: gd('sdr_received_date'),
-      disbursement_status: disbDone?'done':null,
+      disbursement_status: disbRaw==='done'?'done':null,
       disbursement_date:   gd('disbursement_date'),
       disbursement_remark: g('disbursement_remark'),
-      doc_submitted:   g('doc_submitted'),
-      remark:          g('remark'),
+      doc_submitted:     g('doc_submitted'),
+      remark:            g('remark'),
     };
   }
   if(type==='cheques'){

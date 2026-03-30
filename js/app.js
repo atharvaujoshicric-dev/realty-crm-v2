@@ -461,17 +461,20 @@ async function renderSAProj() {
     sc('sc-sky','💰','₹'+fmtCr(totalVal),'Total Value','Agreement value') +
     sc('sc-sage','✅',totalDisb,'Disbursed','Loans done') +
     sc('sc-rose','🧾','₹'+fmtCr(totalChq),'Collected','All cheques');
-  // Draw platform charts
-  ['saC1','saC2','saC3'].forEach(id=>{const c=el(id);if(c){const ex=Chart.getChart(c);if(ex)ex.destroy();}});
-  const pNames=projs.map(p=>p.name);
-  const pBk=projs.map(p=>bkMap[p.id]||0);
-  const pVal=projs.map(p=>+(valMap[p.id]||0)/10000000).map(v=>Math.round(v*100)/100);
-  const ct1=el('saC1-type')?.value||'bar';
-  const ct3=el('saC3-type')?.value||'bar';
-  if(el('saC1')) mkChart('saC1',ct1,pNames,pBk,'#c47d1a','Bookings');
-  if(el('saC2')){const sg=groupCount(allBk||[],'loan_status');mkChart('saC2','doughnut',Object.keys(sg),Object.values(sg),['#c47d1a','#196060','#1a4870','#3a6040','#a83030','#8fa5b5'],'Count');}
-  if(el('saC3')) mkChart('saC3',ct3,pNames,pVal,'#196060','₹Cr');
+  // Render project cards first (never block on charts)
   grid.innerHTML = '';
+  // Draw platform charts safely
+  try {
+    ['saC1','saC2','saC3'].forEach(id=>{const cv=el(id);if(cv){const ex=Chart.getChart(cv);if(ex)ex.destroy();}});
+    const pNames=projs.map(p=>p.name);
+    const pBk=projs.map(p=>bkMap[p.id]||0);
+    const pVal=projs.map(p=>Math.round((valMap[p.id]||0)/10000000*100)/100);
+    const ct1=el('saC1-type')?.value||'bar';
+    const ct3=el('saC3-type')?.value||'bar';
+    if(el('saC1')) mkChart('saC1',ct1,pNames,pBk,'#c47d1a','Bookings');
+    if(el('saC2')){const sg=groupCount(allBk||[],'loan_status');mkChart('saC2','doughnut',Object.keys(sg),Object.values(sg),['#c47d1a','#196060','#1a4870','#3a6040','#a83030','#8fa5b5'],'Count');}
+    if(el('saC3')) mkChart('saC3',ct3,pNames,pVal,'#196060','₹Cr');
+  } catch(e) { console.warn('SA charts:', e.message); }
   projs.forEach((p,i)=>{
     const bk=bkMap[p.id]||0,val=valMap[p.id]||0,disb=disbMap[p.id]||0,chq=chqMap[p.id]||0;
     const d=document.createElement('div'); d.className='proj-card';
@@ -778,8 +781,9 @@ function renderBookings() {
   if (dis==='pending') d=d.filter(b=>b.disbursement_status!=='done');
   el('bkCnt').textContent = `${d.length} of ${S.bookings.length}`;
   const cf = S.customFields.filter(f=>f.applies_to==='booking');
-  const canEdit = true; // sales, admin, superadmin can all edit
-  const canDel  = S.profile?.role === 'admin' || S.profile?.role === 'superadmin';
+  const canEdit   = true;
+  const canCancel = true;
+  const canDel    = S.profile?.role === 'admin' || S.profile?.role === 'superadmin';
   el('bkHead').innerHTML = `<tr><th>#</th><th>Date</th><th>Client</th><th>Contact</th><th>Plot</th><th>Area</th><th>Rate</th><th>Agr. Value</th><th>SDR</th><th>Bank</th><th>Sanction</th><th>Disbursement</th><th>Status</th>${cf.map(f=>`<th>${esc(f.field_label)}</th>`).join('')}<th></th></tr>`;
   const tbody = el('bkBody');
   if (!d.length) {
@@ -1414,8 +1418,11 @@ function buildAuditHTML(logs) {
 const IMP = { wb: null, projId: '', parsed: {} };
 
 function renderImportPage() {
+  // Always clear and repopulate to prevent duplicates
+  const sel = el('imp-proj');
+  sel.innerHTML = '<option value="">— Select Project —</option>';
   sb.from('projects').select('id,name').order('name').then(({ data }) => {
-    el('imp-proj').innerHTML = '<option value="">— Select Project —</option>' +
+    sel.innerHTML = '<option value="">— Select Project —</option>' +
       (data||[]).map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
   });
   resetImport();
@@ -1724,3 +1731,59 @@ async function runImport() {
 }
 
 
+
+// ── HELPERS & UTILITIES ──────────────────────────────────────
+window.addEventListener('click', e => {
+  if (e.target.classList.contains('overlay')) e.target.classList.remove('on');
+});
+
+function sc(cls,icon,val,label,sub){ return `<div class="sc ${cls}"><div class="sc-blob"></div><div class="sc-icon">${icon}</div><div class="sc-val">${val}</div><div class="sc-label">${label}</div><div class="sc-sub">${sub}</div></div>`; }
+function triplet(items){ return `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px">${items.map(x=>`<div style="text-align:center;padding:12px 7px;background:${x.bg};border-radius:9px"><div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700;color:${x.c}">${x.v}</div><div style="font-size:9.5px;text-transform:uppercase;letter-spacing:1px;color:var(--inkf);margin-top:3px">${x.l}</div></div>`).join('')}</div>`; }
+function statusBadge(s){ const m={'Agreement Completed':'b-green','Disbursement Done':'b-green','Sanction Received':'b-blue','File Given':'b-gold','Under Process':'b-teal','Cancelled':'b-rose'}; return `<span class="badge ${m[s]||'b-gray'}">${s||'—'}</span>`; }
+function chqBadge(t){ return {RPM:'b-blue',SM:'b-gold',BOUNCE:'b-rose',NILL:'b-gray',cash:'b-teal',Other:'b-gray'}[t]||'b-gray'; }
+
+function cfInput(f, val, id){
+  if(f.field_type==='select'&&f.field_options?.length)
+    return `<select id="${id}"><option value="">—</option>${f.field_options.map(o=>`<option value="${o}"${val===o?' selected':''}>${esc(o)}</option>`).join('')}</select>`;
+  if(f.field_type==='textarea') return `<textarea id="${id}" rows="2">${esc(val)}</textarea>`;
+  if(f.field_type==='boolean')
+    return `<select id="${id}"><option value="">—</option><option value="Yes"${val==='Yes'?' selected':''}>Yes</option><option value="No"${val==='No'?' selected':''}>No</option></select>`;
+  return `<input type="${f.field_type==='number'?'number':f.field_type==='date'?'date':'text'}" id="${id}" value="${esc(val)}">`;
+}
+
+function normLoanStatus(v){
+  if(!v) return 'File Given';
+  const vl = String(v).toLowerCase().trim();
+  if(vl==='done'||vl.includes('agreement completed')) return 'Agreement Completed';
+  if(vl.includes('sanction received')||vl.includes('sanction reciv')||vl.includes('sanction recied')) return 'Sanction Received';
+  if(vl.includes('cancel')) return 'Cancelled';
+  if(vl.includes('phase 2')||vl.includes('under process')||vl.includes('file under process')) return 'Under Process';
+  if(vl.includes('self fund')) return 'Under Process';
+  if(vl.includes('disburs')&&vl.includes('done')) return 'Disbursement Done';
+  if(vl.includes('file given')||vl.includes('file submitted')||vl.includes('bank')) return 'File Given';
+  return 'File Given';
+}
+
+function normEntry(v){
+  if(!v) return 'RPM';
+  const vl = String(v).toUpperCase().trim();
+  if(['RPM','SM','NILL','BOUNCE'].includes(vl)) return vl;
+  if(vl==='OTHER') return 'Other';
+  if(vl.includes('CASH')) return 'cash';
+  if(vl.startsWith('PLOT')||vl.startsWith('INFRA')) return 'SM';
+  return 'RPM';
+}
+
+async function cancelBk(id, name){
+  if(!confirm(`Cancel booking for ${name}?\nThis sets loan status to Cancelled.`)) return;
+  const {error} = await sb.from('bookings').update({loan_status:'Cancelled'}).eq('id',id);
+  if(error){toast(error.message,'err');return;}
+  await logAudit('cancel','booking',id,name,`Cancelled booking for ${name}`);
+  await loadProjData(); renderBookings(); toast('Booking cancelled');
+}
+
+async function writeLog(action, entity, entityId, entityLabel, changes){
+  await logAudit(action, entity, entityId, entityLabel, entityLabel, changes||{});
+}
+
+function showCSVGuide(){ showEl('csv-guide'); }

@@ -293,7 +293,7 @@ function updateProjHeader() {
   el('pcRole').textContent   = S.profile?.role || '';
   el('dashTitle').textContent = p.name;
   el('dashSub').textContent  = `${p.location || ''} · ${S.bookings.length} bookings`;
-  el('backBtn').style.display = (S.profile?.role === 'superadmin' && S.curProj) ? '' : 'none';
+  el('backBtn').style.display = (S.profile?.role === 'superadmin' && S.curProj) ? 'block' : 'none';
 }
 
 async function loadMyProjects() {
@@ -324,7 +324,7 @@ async function viewProjAsAdmin(pid) {
   if (!p) return;
   S.curProj = p;
   buildNav('admin');
-  el('backBtn').style.display = '';
+  el('backBtn').style.display = 'block';
   el('projChip').style.display = 'none';
   goPage('p-dash');
   await loadProjData(); updateProjHeader(); renderDash();

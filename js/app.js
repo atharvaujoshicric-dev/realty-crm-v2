@@ -453,20 +453,25 @@ async function renderSAProj() {
   const totalVal=Object.values(valMap).reduce((s,v)=>s+v,0);
   const totalDisb=Object.values(disbMap).reduce((s,v)=>s+v,0);
   const totalChq=Object.values(chqMap).reduce((s,v)=>s+v,0);
-  grid.innerHTML='';
-  const ov=document.createElement('div');
-  ov.style.cssText='grid-column:1/-1;margin-bottom:4px';
-  ov.innerHTML=`
-    <div style="margin-bottom:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--inkf)">Platform Overview — All ${projs.length} Projects</div>
-    <div class="stats-row">
-      ${sc('sc-gold','🏗',projs.length,'Projects','Platform-wide')}
-      ${sc('sc-teal','🏡',totalBk,'Total Bookings','All projects')}
-      ${sc('sc-sky','💰','₹'+fmtCr(totalVal),'Total Value','Agreement value')}
-      ${sc('sc-sage','✅',totalDisb,'Disbursed','Loans done')}
-      ${sc('sc-rose','🧾','₹'+fmtCr(totalChq),'Collected','All cheques')}
-    </div>
-    <div style="margin:16px 0 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--inkf)">Individual Projects</div>`;
-  grid.appendChild(ov);
+  // Write stats to dedicated element
+  const ov = el('saOverviewStats');
+  if (ov) ov.innerHTML =
+    sc('sc-gold','🏗',projs.length,'Projects','Platform-wide') +
+    sc('sc-teal','🏡',totalBk,'Total Bookings','All projects') +
+    sc('sc-sky','💰','₹'+fmtCr(totalVal),'Total Value','Agreement value') +
+    sc('sc-sage','✅',totalDisb,'Disbursed','Loans done') +
+    sc('sc-rose','🧾','₹'+fmtCr(totalChq),'Collected','All cheques');
+  // Draw platform charts
+  ['saC1','saC2','saC3'].forEach(id=>{const c=el(id);if(c){const ex=Chart.getChart(c);if(ex)ex.destroy();}});
+  const pNames=projs.map(p=>p.name);
+  const pBk=projs.map(p=>bkMap[p.id]||0);
+  const pVal=projs.map(p=>+(valMap[p.id]||0)/10000000).map(v=>Math.round(v*100)/100);
+  const ct1=el('saC1-type')?.value||'bar';
+  const ct3=el('saC3-type')?.value||'bar';
+  if(el('saC1')) mkChart('saC1',ct1,pNames,pBk,'#c47d1a','Bookings');
+  if(el('saC2')){const sg=groupCount(allBk||[],'loan_status');mkChart('saC2','doughnut',Object.keys(sg),Object.values(sg),['#c47d1a','#196060','#1a4870','#3a6040','#a83030','#8fa5b5'],'Count');}
+  if(el('saC3')) mkChart('saC3',ct3,pNames,pVal,'#196060','₹Cr');
+  grid.innerHTML = '';
   projs.forEach((p,i)=>{
     const bk=bkMap[p.id]||0,val=valMap[p.id]||0,disb=disbMap[p.id]||0,chq=chqMap[p.id]||0;
     const d=document.createElement('div'); d.className='proj-card';
@@ -1288,35 +1293,19 @@ function dlCSV(type){
 }
 
 // ── AUDIT LOG ────────────────────────────────────────────────
-async function logAudit(action, entity, entityId, entityName, detail, changes=null) {
+async function logAudit(action, entity, entityId, entityLabel, detail, changes=null) {
   if (!S.profile || !S.curProj) return;
   try {
     await sb.from('audit_log').insert({
-      project_id:  S.curProj.id,
-      user_id:     S.profile.id,
-      user_name:   S.profile.full_name,
-      user_role:   S.profile.role,
-      action,       // CREATE, UPDATE, DELETE, IMPORT
-      entity,       // booking, cheque, prev_booking
-      entity_id:   entityId || null,
-      entity_name: entityName || '',
-      detail,
-      changes:     changes ? JSON.stringify(changes) : null,
-    });
-  } catch(e) { console.warn('Audit log failed:', e.message); }
-}
-
-async function logSAAction(action, entity, entityId, entityName, detail) {
-  // For superadmin actions not tied to a specific project
-  if (!S.profile) return;
-  try {
-    await sb.from('audit_log').insert({
-      project_id:  null,
-      user_id:     S.profile.id,
-      user_name:   S.profile.full_name,
-      user_role:   S.profile.role,
-      action, entity, entity_id: entityId||null,
-      entity_name: entityName||'', detail, changes: null,
+      project_id:   S.curProj.id,
+      user_id:      S.profile.id,
+      user_name:    S.profile.full_name,
+      user_role:    S.profile.role,
+      action:       action.toLowerCase(),
+      entity,
+      entity_id:    entityId || null,
+      entity_label: entityLabel || detail || '',
+      changes:      changes || {},
     });
   } catch(e) { console.warn('Audit log failed:', e.message); }
 }
@@ -1434,7 +1423,7 @@ function renderImportPage() {
 
 function resetImport() {
   IMP.wb = null; IMP.projId = ''; IMP.parsed = {};
-  showEl('imp-s1'); hideEl('imp-s2'); hideEl('imp-s3'); hideEl('imp-result');
+  showEl('imp-s1'); hideEl('imp-s2'); hideEl('imp-result');
   const fi = el('imp-file'); if (fi) fi.value = '';
   el('imp-fname').textContent = '';
   el('imp-parse-btn').disabled = true;

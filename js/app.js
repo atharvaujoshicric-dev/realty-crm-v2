@@ -269,6 +269,7 @@ async function navigate(pid) {
     'p-sa-import': renderImportPage,
     'p-sa-audit':  renderSAAudit,
     'p-dash':      renderDash,
+    'p-plotmap':   renderPlotMap,
     'p-bookings':  renderBookings,
     'p-pipeline':  renderPipeline,
     'p-cheques':   renderCheques,
@@ -1796,3 +1797,161 @@ async function writeLog(action, entity, entityId, entityLabel, changes){
 }
 
 function showCSVGuide(){ showEl('csv-guide'); }
+
+// ── PLOT MAP ─────────────────────────────────────────────────
+const PM = { filter: { num: '', status: '' } };
+
+// Status color config
+const PLOT_STATUS = {
+  available:  { label:'Available',           color:'#22c55e', bg:'#dcfce7', border:'#16a34a', text:'#15803d' },
+  booked:     { label:'Booked / Processing', color:'#f59e0b', bg:'#fef3c7', border:'#d97706', text:'#92400e' },
+  sanction:   { label:'Sanction Received',   color:'#3b82f6', bg:'#dbeafe', border:'#1d4ed8', text:'#1e40af' },
+  completed:  { label:'Agreement Completed', color:'#16a34a', bg:'#bbf7d0', border:'#15803d', text:'#14532d' },
+  prev:       { label:'Previous Team',       color:'#a855f7', bg:'#f3e8ff', border:'#7e22ce', text:'#6b21a8' },
+  phase2:     { label:'Phase 2',             color:'#6b7280', bg:'#f3f4f6', border:'#4b5563', text:'#374151' },
+};
+
+function getPlotStatus(plotNo) {
+  const pn = parseInt(plotNo);
+  // Check prev team bookings
+  const prevMatch = S.prev.find(x => parseInt(x.plot_no) === pn);
+  if (prevMatch) return 'prev';
+  // Check current bookings
+  const bk = S.bookings.find(b => parseInt(b.plot_no) === pn);
+  if (!bk) return 'available';
+  if (bk.loan_status === 'Agreement Completed') return 'completed';
+  if (bk.loan_status === 'Sanction Received')   return 'sanction';
+  if (bk.bank_name === 'Phase 2')               return 'phase2';
+  return 'booked';
+}
+
+function renderPlotMap() {
+  if (!S.curProj) return;
+  const totalPlots = S.curProj.total_plots || 92;
+  el('plotMapTitle').textContent = S.curProj.name + ' — Plot Map';
+  el('plotMapSub').textContent   = `${totalPlots} plots total · click any plot to see details`;
+
+  // Summary counts
+  const counts = { available:0, booked:0, sanction:0, completed:0, prev:0, phase2:0 };
+  for (let i = 1; i <= totalPlots; i++) {
+    counts[getPlotStatus(i)]++;
+  }
+  el('plotSummaryBar').innerHTML = Object.entries(counts).map(([st, cnt]) => {
+    if (!cnt) return '';
+    const cfg = PLOT_STATUS[st];
+    return `<div style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;background:${cfg.bg};border:1.5px solid ${cfg.border}">
+      <div style="width:10px;height:10px;border-radius:50%;background:${cfg.color}"></div>
+      <span style="font-size:12px;font-weight:600;color:${cfg.text}">${cfg.label}: ${cnt}</span>
+    </div>`;
+  }).join('');
+
+  drawPlotGrid(totalPlots);
+}
+
+function drawPlotGrid(totalPlots) {
+  const grid   = el('plotGrid');
+  const filter = PM.filter;
+  grid.innerHTML = '';
+
+  // Responsive columns: keep 10 per row for <= 100 plots
+  const cols = Math.min(10, totalPlots);
+  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+
+  for (let i = 1; i <= totalPlots; i++) {
+    const st  = getPlotStatus(i);
+    const cfg = PLOT_STATUS[st];
+
+    // Apply filter
+    let hide = false;
+    if (filter.num && parseInt(filter.num) !== i) hide = true;
+    if (filter.status && filter.status !== st) hide = true;
+
+    const bk = S.bookings.find(b => parseInt(b.plot_no) === i);
+    const pv = S.prev.find(x => parseInt(x.plot_no) === i);
+
+    const cell = document.createElement('div');
+    cell.className  = 'plot-cell';
+    cell.title      = `Plot ${i} — ${cfg.label}`;
+    cell.style.cssText = `
+      aspect-ratio:1;border-radius:8px;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;cursor:pointer;
+      background:${cfg.bg};border:2px solid ${cfg.border};
+      transition:transform .15s,box-shadow .15s;position:relative;
+      opacity:${hide ? '0.15' : '1'};
+      pointer-events:${hide ? 'none' : 'auto'};
+    `;
+    cell.innerHTML = `
+      <div style="font-size:clamp(9px,1.2vw,13px);font-weight:700;color:${cfg.text};line-height:1">${i}</div>
+      ${bk ? `<div style="font-size:clamp(7px,0.8vw,9px);color:${cfg.text};opacity:.7;margin-top:2px;text-align:center;max-width:90%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${bk.bank_name||''}</div>` : ''}
+    `;
+    cell.onmouseover = () => { cell.style.transform='scale(1.08)'; cell.style.boxShadow=`0 4px 14px ${cfg.color}44`; cell.style.zIndex='2'; };
+    cell.onmouseleave= () => { cell.style.transform=''; cell.style.boxShadow=''; cell.style.zIndex=''; };
+    cell.onclick     = () => openPlotDetail(i, st, bk, pv);
+    grid.appendChild(cell);
+  }
+}
+
+function openPlotDetail(plotNo, status, bk, pv) {
+  const cfg = PLOT_STATUS[status];
+  el('pdTitle').textContent = `Plot ${plotNo}`;
+  el('pdSub').innerHTML     = `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:12px;background:${cfg.bg};border:1px solid ${cfg.border};color:${cfg.text};font-size:12px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:${cfg.color}"></span>${cfg.label}</span>`;
+
+  if (status === 'available') {
+    el('pdBody').innerHTML = `
+      <div style="text-align:center;padding:24px 0">
+        <div style="font-size:40px;margin-bottom:12px">✅</div>
+        <div style="font-size:18px;font-weight:700;color:var(--sage);margin-bottom:6px">Available</div>
+        <div style="font-size:13px;color:var(--inkf)">This plot is available for booking</div>
+      </div>`;
+    el('pdFoot').innerHTML = `
+      <button class="btn btn-outline" onclick="closeM('plotDetailModal')">Close</button>
+      <button class="btn btn-gold" onclick="closeM('plotDetailModal');openBkModal({plot_no:'${plotNo}'})">＋ Book This Plot</button>`;
+  } else {
+    const data = bk || pv;
+    const isPrev = !bk && !!pv;
+    const fmt  = n => n ? '₹' + (+n).toLocaleString('en-IN') : '—';
+    el('pdBody').innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:0">
+        ${row('Client',        data?.client_name || data?.client_name || '—')}
+        ${row('Plot Size',     data?.plot_size ? (data.plot_size + ' sqft') : '—')}
+        ${row('Agr. Value',    fmt(data?.agreement_value))}
+        ${!isPrev ? row('Basic Rate',    data?.basic_rate ? '₹'+data.basic_rate+'/sqft' : '—') : ''}
+        ${!isPrev ? row('SDR',           fmt(data?.sdr)) : ''}
+        ${!isPrev ? row('Bank',          data?.bank_name || '—') : ''}
+        ${!isPrev ? row('Loan Status',   data?.loan_status || '—') : ''}
+        ${!isPrev ? row('Sanction',      data?.sanction_received || '—') : ''}
+        ${!isPrev ? row('Disbursement',  data?.disbursement_status === 'done' ? '✓ Done' : 'Pending') : ''}
+        ${!isPrev ? row('Banker Contact',data?.banker_contact || '—') : ''}
+        ${!isPrev && data?.remark ? row('Remark', data.remark) : ''}
+        ${isPrev ? '<div style="margin-top:12px;padding:10px;background:var(--paper);border-radius:8px;font-size:12px;color:var(--inkf);text-align:center">Previous team booking — limited details</div>' : ''}
+      </div>`;
+    el('pdFoot').innerHTML = `
+      <button class="btn btn-outline" onclick="closeM('plotDetailModal')">Close</button>
+      ${!isPrev && bk ? `<button class="btn btn-gold" onclick="closeM('plotDetailModal');editBk('${bk.id}')">✏️ Edit Booking</button>` : ''}`;
+  }
+  openM('plotDetailModal');
+}
+
+function row(label, value) {
+  return `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--border)">
+    <div style="font-size:12px;color:var(--inkf);font-weight:500;flex-shrink:0;margin-right:12px">${label}</div>
+    <div style="font-size:13px;font-weight:600;text-align:right;max-width:60%">${esc(String(value||'—'))}</div>
+  </div>`;
+}
+
+function openPlotFilter() { openM('plotFilterModal'); }
+
+function applyPlotFilter() {
+  PM.filter.num    = el('pf-num')?.value || '';
+  PM.filter.status = el('pf-status')?.value || '';
+  closeM('plotFilterModal');
+  drawPlotGrid(S.curProj?.total_plots || 92);
+}
+
+function resetPlotFilter() {
+  PM.filter = { num:'', status:'' };
+  if (el('pf-num'))    el('pf-num').value    = '';
+  if (el('pf-status')) el('pf-status').value = '';
+  closeM('plotFilterModal');
+  renderPlotMap();
+}

@@ -383,6 +383,32 @@ notes</code>
       </div>
     </div>
 
+    <!-- PLOT MAP -->
+    <div class="page" id="p-plotmap">
+      <div class="ph">
+        <div><h1 id="plotMapTitle">Plot Layout Map</h1><p id="plotMapSub">Interactive plot availability — click any plot to see details</p></div>
+        <div class="ph-r" style="gap:8px">
+          <button class="btn btn-outline btn-sm" onclick="openPlotFilter()">⚙ Filter</button>
+          <button class="btn btn-outline btn-sm" onclick="resetPlotFilter()">✕ Reset</button>
+        </div>
+      </div>
+      <!-- Legend -->
+      <div id="plotLegend" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px;align-items:center">
+        <div class="plot-legend-item" style="background:#22c55e22;border:1.5px solid #22c55e"><span class="plot-legend-dot" style="background:#22c55e"></span>Available</div>
+        <div class="plot-legend-item" style="background:#f59e0b22;border:1.5px solid #f59e0b"><span class="plot-legend-dot" style="background:#f59e0b"></span>File Given / Processing</div>
+        <div class="plot-legend-item" style="background:#3b82f622;border:1.5px solid #3b82f6"><span class="plot-legend-dot" style="background:#3b82f6"></span>Sanction Received</div>
+        <div class="plot-legend-item" style="background:#16a34a22;border:1.5px solid #16a34a"><span class="plot-legend-dot" style="background:#16a34a"></span>Agreement Completed</div>
+        <div class="plot-legend-item" style="background:#a855f722;border:1.5px solid #a855f7"><span class="plot-legend-dot" style="background:#a855f7"></span>Previous Team</div>
+        <div class="plot-legend-item" style="background:#6b728022;border:1.5px solid #6b7280"><span class="plot-legend-dot" style="background:#6b7280"></span>Phase 2</div>
+      </div>
+      <!-- Summary bar -->
+      <div id="plotSummaryBar" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px"></div>
+      <!-- Plot Grid -->
+      <div class="card" style="padding:20px">
+        <div id="plotGrid" style="display:grid;grid-template-columns:repeat(10,1fr);gap:6px"></div>
+      </div>
+    </div>
+
     <!-- DASHBOARD -->
     <div class="page" id="p-dash">
       <div class="ph">
@@ -579,6 +605,44 @@ notes</code>
 </div>
 
 <!-- ═══ MODALS ═══ -->
+
+<!-- Plot Filter Modal -->
+<div class="overlay" id="plotFilterModal">
+  <div class="modal modal-sm">
+    <div class="mhd"><div><div class="mhd-title">Filter Plots</div></div><button class="mclose" onclick="closeM('plotFilterModal')">✕</button></div>
+    <div class="mbody" style="display:flex;flex-direction:column;gap:13px">
+      <div class="fg"><label>Plot Number</label><input type="number" id="pf-num" placeholder="e.g. 45"></div>
+      <div class="fg"><label>Status</label>
+        <select id="pf-status">
+          <option value="">All Statuses</option>
+          <option value="available">✅ Available</option>
+          <option value="booked">🟡 Booked / Processing</option>
+          <option value="sanction">🔵 Sanction Received</option>
+          <option value="completed">🟢 Agreement Completed</option>
+          <option value="prev">🟣 Previous Team</option>
+        </select>
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="btn btn-outline" onclick="resetPlotFilter()">Reset</button>
+      <button class="btn btn-gold" onclick="applyPlotFilter()">Apply Filter</button>
+    </div>
+  </div>
+</div>
+
+<!-- Plot Detail Modal -->
+<div class="overlay" id="plotDetailModal">
+  <div class="modal modal-sm">
+    <div class="mhd">
+      <div><div class="mhd-title" id="pdTitle">Plot Details</div><div class="mhd-sub" id="pdSub"></div></div>
+      <button class="mclose" onclick="closeM('plotDetailModal')">✕</button>
+    </div>
+    <div class="mbody" id="pdBody"></div>
+    <div class="mfoot" id="pdFoot">
+      <button class="btn btn-outline" onclick="closeM('plotDetailModal')">Close</button>
+    </div>
+  </div>
+</div>
 
 <!-- Project Modal -->
 <div class="overlay" id="projModal">

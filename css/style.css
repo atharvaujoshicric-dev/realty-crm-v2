@@ -261,3 +261,8 @@ tbody tr:hover td{background:var(--paper)}
 @media(max-width:1100px){.stats-row{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:900px){.page{padding:14px}.d-grid{grid-template-columns:1fr 1fr}.form2{grid-template-columns:1fr}}
 @media(max-width:640px){.stats-row{grid-template-columns:1fr 1fr}.proj-grid{grid-template-columns:1fr}}
+
+/* ── PLOT MAP ─────────────────────────────────────────────── */
+.plot-cell{aspect-ratio:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s,box-shadow .15s;position:relative;user-select:none}
+.plot-legend-item{display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600}
+.plot-legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}

@@ -1,4 +1,3 @@
-'use strict';
 // ═══════════════════════════════════════════════════════════
 //  RealtyFlow CRM v3 — app.js
 //  Complete rewrite. All bugs fixed.
@@ -1919,9 +1918,9 @@ function init3DPlotMap(container, plotData) {
     if (hits.length) {
       const mesh = hits[0].object;
       if (mesh !== hoveredMesh) {
-        if (hoveredMesh) hoveredMesh.position.y = hoveredMesh.userData.baseY;
+        if (hoveredMesh) hoveredMesh.position.set(hoveredMesh.position.x, hoveredMesh.userData.baseY, hoveredMesh.position.z);
         hoveredMesh = mesh;
-        mesh.position.y = mesh.userData.baseY + 0.3;
+        mesh.position.set(mesh.position.x, mesh.userData.baseY + 0.3, mesh.position.z);
         dom.style.cursor='pointer';
       }
       const pd = mesh.userData.data;
@@ -1951,7 +1950,7 @@ function init3DPlotMap(container, plotData) {
       tip.style.display='none';
     }
   });
-  dom.addEventListener('mouseleave',()=>{ tip.style.display='none'; if(hoveredMesh){hoveredMesh.position.y=hoveredMesh.userData.baseY;hoveredMesh=null;} });
+  dom.addEventListener('mouseleave',()=>{ tip.style.display='none'; if(hoveredMesh){hoveredMesh.position.set(hoveredMesh.position.x,hoveredMesh.userData.baseY,hoveredMesh.position.z);hoveredMesh=null;} });
 
   // Click — open detail (only if not dragging)
   dom.addEventListener('click', e => {

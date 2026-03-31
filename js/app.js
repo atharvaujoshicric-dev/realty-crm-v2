@@ -70,6 +70,7 @@ const S = {
   charts: {},
   editBkId: null, editChqId: null, editProjId: null, editUserId: null,
   clearProjId: null,
+  booting: false,
 };
 
 // ── DOM helpers ──────────────────────────────────────────────
@@ -91,7 +92,7 @@ const groupCount = (arr, k) => { const m = {}; arr.forEach(x => { const kv = x[k
 const groupSum   = (arr, k, vk) => { const m = {}; arr.forEach(x => { const kv = x[k]||'Other'; m[kv]=(m[kv]||0)+(+x[vk]||0); }); return m; };
 const openM  = id => el(id)?.classList.add('on');
 const closeM = id => el(id)?.classList.remove('on');
-window.addEventListener('click', e => {
+window.addEventListener('click', e => { if(e.target.classList.contains('overlay')) e.target.classList.remove('on'); });
 
 function sc(cls,icon,val,label,sub){
   return `<div class="sc ${cls}"><div class="sc-blob"></div><div class="sc-icon">${icon}</div><div class="sc-val">${val}</div><div class="sc-label">${label}</div><div class="sc-sub">${sub}</div></div>`;
@@ -143,8 +144,6 @@ async function writeLog(action,entity,entityId,entityLabel){
   await logAudit(action,entity,entityId,entityLabel,entityLabel||'');
 }
 
-  if (e.target.classList.contains('overlay')) e.target.classList.remove('on');
-});
 
 function toast(msg, type = 'ok') {
   const t = el('toast');
@@ -180,13 +179,15 @@ window.addEventListener('DOMContentLoaded', async () => {
   } catch(e) { console.error('Session error:', e); showLogin(); }
 
   sb.auth.onAuthStateChange(async (ev, sess) => {
-    if (ev === 'SIGNED_IN'  && sess?.user && !S.user) await boot(sess.user);
-    if (ev === 'SIGNED_OUT') showLogin();
+    if (ev === 'SIGNED_IN' && sess?.user && !S.user && !S.booting) await boot(sess.user);
+    if (ev === 'SIGNED_OUT') { S.user=null; S.profile=null; showLogin(); }
   });
 });
 
 async function boot(authUser) {
+  if (S.booting) return; // prevent concurrent boots
   if (S.user?.id === authUser.id) return; // already booted
+  S.booting = true;
   showLoader(true);
   try {
     let { data: prof, error } = await sb.from('profiles').select('*').eq('id', authUser.id).single();
@@ -235,8 +236,10 @@ async function boot(authUser) {
   } catch(e) {
     console.error('Boot error:', e);
     showLogin('Connection error: ' + e.message);
+  } finally {
+    S.booting = false;
+    showLoader(false);
   }
-  showLoader(false);
 }
 
 // ── AUTH ─────────────────────────────────────────────────────
@@ -254,7 +257,8 @@ async function doLogin() {
 
 async function doLogout() {
   S.user = null; S.profile = null; S.curProj = null;
-  S.bookings = []; S.cheques = []; S.prev = [];
+  S.projects = []; S.bookings = []; S.cheques = []; S.prev = [];
+  showLogin();
   await sb.auth.signOut();
 }
 

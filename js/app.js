@@ -283,22 +283,24 @@ const NAV_TABS = {
   ],
   admin: [
     {id:'p-dash',i:'📊',l:'Dashboard'},
+    {id:'p-plotmap',i:'🗺',l:'Plot Map'},
     {id:'p-bookings',i:'🏡',l:'Bookings'},
     {id:'p-pipeline',i:'🔄',l:'Pipeline'},
     {id:'p-cheques',i:'🧾',l:'Cheques'},
     {id:'p-prev',i:'📁',l:'Prev Team'},
     {id:'p-analytics',i:'📈',l:'Analytics'},
     {id:'p-audit',i:'📋',l:'Audit Log'},
+    {id:'p-sa-import',i:'📥',l:'Import'},
     {id:'p-settings',i:'⚙️',l:'Settings'},
   ],
   sales: [
     {id:'p-dash',i:'📊',l:'Dashboard'},
+    {id:'p-plotmap',i:'🗺',l:'Plot Map'},
     {id:'p-bookings',i:'🏡',l:'Bookings'},
     {id:'p-pipeline',i:'🔄',l:'Pipeline'},
     {id:'p-cheques',i:'🧾',l:'Cheques'},
     {id:'p-prev',i:'📁',l:'Prev Team'},
     {id:'p-analytics',i:'📈',l:'Analytics'},
-    {id:'p-sa-import',i:'📥',l:'Import CSV'},
   ],
 };
 
@@ -1579,7 +1581,11 @@ function getPlotStatus(plotNo) {
 
 function renderPlotMap() {
   if (!S.curProj) return;
-  const totalPlots = S.curProj.total_plots || 92;
+  // Use total_plots from project settings, or derive from max plot number in bookings
+  const maxBkPlot = S.bookings.reduce((mx, b) => { const n = parseInt(b.plot_no); return n > mx ? n : mx; }, 0);
+  const maxPvPlot = S.prev.reduce((mx, p) => { const n = parseInt(p.plot_no); return n > mx ? n : mx; }, 0);
+  const derivedMax = Math.max(maxBkPlot, maxPvPlot, 1);
+  const totalPlots = S.curProj.total_plots || Math.ceil(derivedMax / 10) * 10 || 92;
   el('plotMapTitle').textContent = S.curProj.name + ' — Plot Map';
   el('plotMapSub').textContent   = totalPlots + ' plots total · click any plot to view details';
 
@@ -1713,3 +1719,242 @@ function resetPlotFilter() {
   closeM('plotFilterModal');
   if (S.curProj) renderPlotMap();
 }
+
+// ── IMPORT SYSTEM ────────────────────────────────────────────
+const IMP = { wb: null, projId: '', parsed: {}, role: '' };
+
+function renderImportPage() {
+  // Only superadmin sees all projects; admin sees only their project
+  const role = S.profile?.role;
+  IMP.role = role;
+  const sel = el('imp-proj');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Select Project —</option>';
+
+  if (role === 'superadmin') {
+    sb.from('projects').select('id,name').order('name').then(({ data }) => {
+      sel.innerHTML = '<option value="">— Select Project —</option>' +
+        (data||[]).map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+    });
+  } else if (role === 'admin' && S.curProj) {
+    sel.innerHTML = `<option value="${S.curProj.id}" selected>${esc(S.curProj.name)}</option>`;
+  }
+  resetImport();
+}
+
+function resetImport() {
+  IMP.wb = null; IMP.projId = ''; IMP.parsed = {};
+  const s1=el('imp-s1'), s2=el('imp-s2'), s3=el('imp-result'), pb=el('imp-progress');
+  if(s1) s1.style.display='';
+  if(s2) s2.style.display='none';
+  if(s3) s3.style.display='none';
+  if(pb) pb.style.display='none';
+  const fi=el('imp-file'); if(fi) fi.value='';
+  const fn=el('imp-fname'); if(fn) fn.textContent='';
+  const pb2=el('imp-parse-btn'); if(pb2) pb2.disabled=true;
+  const ic=el('imp-confirm'); if(ic) ic.disabled=true;
+}
+
+function onFileChange(input) {
+  const file=input.files[0]; if(!file) return;
+  const fn=el('imp-fname'); if(fn) fn.textContent='📊 '+file.name;
+  const pb=el('imp-parse-btn'); if(pb) pb.disabled=false;
+}
+
+async function parseFile() {
+  const file=el('imp-file')?.files[0];
+  const projId=el('imp-proj')?.value;
+  if(!file)   { toast('Select an Excel file','err'); return; }
+  if(!projId) { toast('Select a project','err'); return; }
+  if(typeof XLSX==='undefined') { toast('Excel library not loaded — refresh page','err'); return; }
+  IMP.projId=projId;
+  const pb=el('imp-parse-btn'); if(pb) pb.disabled=true;
+  const fn=el('imp-fname'); if(fn) fn.textContent='⏳ Reading workbook…';
+  try {
+    const buf=await file.arrayBuffer();
+    IMP.wb=XLSX.read(buf,{type:'array',cellDates:true,raw:false});
+  } catch(e) {
+    toast('Could not read file: '+e.message,'err');
+    if(pb) pb.disabled=false;
+    return;
+  }
+  IMP.parsed={};
+  const sheets=IMP.wb.SheetNames;
+  const bwSheet=sheets.find(s=>s.toLowerCase().includes('bwxsotr')||s.toLowerCase().includes('bw'));
+  if(bwSheet) IMP.parsed.bookings=parseBWxSOTR(IMP.wb.Sheets[bwSheet]);
+  const chqSheet=sheets.find(s=>s.toLowerCase().includes('cheque'));
+  if(chqSheet) IMP.parsed.cheques=parseCheques(IMP.wb.Sheets[chqSheet]);
+  const prevSheet=sheets.find(s=>s.toLowerCase().includes('previous')||s.toLowerCase().includes('prev team'));
+  if(prevSheet) IMP.parsed.prev=parsePrevTeam(IMP.wb.Sheets[prevSheet]);
+  if(pb) pb.disabled=false;
+  const bkC=IMP.parsed.bookings?.length||0, chqC=IMP.parsed.cheques?.length||0, pvC=IMP.parsed.prev?.length||0;
+  const total=bkC+chqC+pvC;
+  if(!total){ toast('No valid data found','err'); return; }
+  const sm=el('imp-summary');
+  if(sm) sm.innerHTML=`
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+      ${bkC?`<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--paper);border:1px solid var(--border);border-radius:8px">
+        <span style="font-size:20px">🏡</span><div style="flex:1"><div style="font-weight:600">Bookings (BWxSOTR)</div><div style="font-size:12px;color:var(--inkf)">Sheet: ${bwSheet}</div></div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700">${bkC}</div><div style="font-size:12px;color:var(--inkf)">rows</div></div>`:'<div style="padding:10px;color:var(--rose);font-size:13px;border:1px solid var(--border);border-radius:8px">⚠️ No BWxSOTR sheet found</div>'}
+      ${chqC?`<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--paper);border:1px solid var(--border);border-radius:8px">
+        <span style="font-size:20px">🧾</span><div style="flex:1"><div style="font-weight:600">Cheques</div><div style="font-size:12px;color:var(--inkf)">Sheet: ${chqSheet}</div></div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700">${chqC}</div><div style="font-size:12px;color:var(--inkf)">rows</div></div>`:''}
+      ${pvC?`<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--paper);border:1px solid var(--border);border-radius:8px">
+        <span style="font-size:20px">📁</span><div style="flex:1"><div style="font-weight:600">Previous Team</div><div style="font-size:12px;color:var(--inkf)">Sheet: ${prevSheet}</div></div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700">${pvC}</div><div style="font-size:12px;color:var(--inkf)">rows</div></div>`:''}
+    </div>
+    <div style="padding:12px 16px;background:var(--goldl);border:1px solid var(--goldb);border-radius:8px">
+      <strong>Total: ${total} records</strong> — duplicates will be skipped automatically
+    </div>`;
+  const tot=el('imp-total'); if(tot) tot.textContent=total;
+  const ic=el('imp-confirm'); if(ic) ic.disabled=false;
+  const s1=el('imp-s1'), s2=el('imp-s2');
+  if(s1) s1.style.display='none';
+  if(s2) s2.style.display='';
+}
+
+// ── SHEET PARSERS ─────────────────────────────────────────────
+function sheetToRows(ws){ return XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false}); }
+function cellVal(row,idx){ const v=row[idx]; if(v===undefined||v===null) return ''; return String(v).replace(/[\u202a\u202c]/g,'').replace(/\u00a0/g,' ').trim(); }
+function cellNum(row,idx){ const v=cellVal(row,idx); if(!v||v==='nan') return null; const n=parseFloat(v.replace(/[₹,\s]/g,'')); return isNaN(n)?null:n; }
+function cellDate(row,idx){
+  const v=cellVal(row,idx); if(!v||v==='nan'||v==='NaT') return null;
+  if(/^\d{4}-\d{2}-\d{2}/.test(v)) return v.substring(0,10);
+  const m=v.match(/^(\d{1,2})[.\\/\-](\d{1,2})[.\\/\-](\d{2,4})$/);
+  if(m){ const d=m[1].padStart(2,'0'),mo=m[2].padStart(2,'0'),y=m[3].length===2?'20'+m[3]:m[3]; if(parseInt(mo)>12||parseInt(d)>31) return null; return `${y}-${mo}-${d}`; }
+  const n=parseFloat(v); if(!isNaN(n)&&n>40000&&n<60000) return new Date(Math.round((n-25569)*86400000)).toISOString().substring(0,10);
+  return null;
+}
+function normBank(v){ if(!v) return ''; const vl=v.toLowerCase(); if(vl.includes('axis')) return 'Axis'; if(vl.includes('hdfc')) return 'HDFC'; if(vl.includes('idbi')) return 'IDBI'; if(vl.includes('icici')) return 'ICICI'; if(vl.includes('sbi')) return 'SBI'; if(vl.includes('tata')) return 'Tata Capital'; if(vl==='self'||vl==='...'||vl==='---') return 'Self'; if(vl.includes('phase 2')) return 'Phase 2'; return v.trim(); }
+
+function parseBWxSOTR(ws){
+  const allRows=sheetToRows(ws);
+  const rows=allRows.slice(2).filter(r=>{ const n=cellVal(r,2); return n&&n!=='nan'&&n.trim()!==''; });
+  return rows.map(r=>{
+    const agreeRaw=cellVal(r,18), disbRaw=cellVal(r,34);
+    const agreeL=agreeRaw.toLowerCase().trim(), disbL=disbRaw.toLowerCase().trim().replace(/[^a-z]/g,'');
+    const isDone=agreeL==='done'||disbL==='done';
+    return {
+      serial_no:cellNum(r,0)?parseInt(cellVal(r,0)):null, booking_date:cellDate(r,1),
+      client_name:cellVal(r,2), contact:cellVal(r,3), plot_no:cellVal(r,4),
+      plot_size:cellNum(r,5), basic_rate:cellNum(r,6), infra:cellNum(r,7)??100,
+      agreement_value:cellNum(r,10), sdr:cellNum(r,11), sdr_minus:cellNum(r,12)??0,
+      maintenance:cellNum(r,13)??0, legal_charges:cellNum(r,14)??25000,
+      bank_name:normBank(cellVal(r,21)), banker_contact:cellVal(r,33),
+      loan_status:isDone?'Agreement Completed':normLoanStatus(agreeRaw),
+      sanction_received:cellVal(r,30).toLowerCase().startsWith('y')?'Yes':null,
+      sanction_date:cellDate(r,31), sanction_letter:cellVal(r,32)||null,
+      sdr_received:cellNum(r,28), sdr_received_date:cellDate(r,29),
+      disbursement_status:isDone?'done':null, disbursement_date:cellDate(r,35),
+      disbursement_remark:(!isDone&&disbRaw&&disbL!=='')?disbRaw:'',
+      doc_submitted:cellVal(r,37), remark:cellVal(r,36),
+    };
+  }).filter(r=>r.client_name);
+}
+
+function parseCheques(ws){
+  const rows=sheetToRows(ws).slice(1);
+  const result=[]; let lastName='', lastPlot='';
+  rows.forEach(r=>{
+    const name=cellVal(r,0), plot=cellVal(r,1), bank=cellVal(r,2), chqno=cellVal(r,3), date=cellVal(r,4), amtRaw=cellVal(r,5), remark=cellVal(r,6);
+    if(name&&name!=='nan'){ lastName=name; if(plot&&!['infra chrg','infra charge'].includes(plot.toLowerCase())&&plot!=='nan') lastPlot=plot; }
+    const amount=parseFloat(amtRaw.replace(/[₹,\s]/g,''))||0;
+    const entryType=normEntry(remark);
+    if(entryType==='NILL'&&!bank&&!date) return;
+    if(amount<=0||!lastName) return;
+    let chequeDate=null;
+    if(date&&!['cash recv','rtgs done','nan',''].includes(date.toLowerCase())){
+      const dm=date.match(/^(\d{1,2})[./](\d{1,2})[./](\d{2,4})$/);
+      if(dm){ const y=dm[3].length===2?'20'+dm[3]:dm[3]; chequeDate=`${y}-${dm[2].padStart(2,'0')}-${dm[1].padStart(2,'0')}`; }
+    }
+    result.push({cust_name:lastName,plot_no:lastPlot,bank_detail:bank,cheque_no:chqno,cheque_date:chequeDate,amount,entry_type:entryType});
+  });
+  return result;
+}
+
+function parsePrevTeam(ws){
+  return sheetToRows(ws).slice(1)
+    .filter(r=>cellVal(r,0)&&cellVal(r,0)!=='nan')
+    .map(r=>({client_name:cellVal(r,0),plot_no:cellVal(r,1),plot_size:cellNum(r,2),agreement_value:cellNum(r,3),notes:''}));
+}
+
+// ── DEDUPLICATION LOGIC ───────────────────────────────────────
+async function dedupeBookings(rows, projId) {
+  const { data: existing } = await sb.from('bookings').select('plot_no').eq('project_id', projId);
+  const existingPlots = new Set((existing||[]).map(b => String(b.plot_no).trim()));
+  const fresh = rows.filter(r => !existingPlots.has(String(r.plot_no).trim()));
+  console.log(`Bookings: ${rows.length} total, ${rows.length - fresh.length} duplicates skipped, ${fresh.length} to import`);
+  return fresh;
+}
+
+async function dedupeCheques(rows, projId) {
+  const { data: existing } = await sb.from('cheques').select('cheque_no,cust_name,amount').eq('project_id', projId);
+  const existingKeys = new Set((existing||[]).map(c => `${c.cheque_no}|${c.cust_name}|${c.amount}`));
+  const fresh = rows.filter(r => !existingKeys.has(`${r.cheque_no}|${r.cust_name}|${r.amount}`));
+  console.log(`Cheques: ${rows.length} total, ${rows.length - fresh.length} duplicates skipped, ${fresh.length} to import`);
+  return fresh;
+}
+
+async function dedupePrev(rows, projId) {
+  const { data: existing } = await sb.from('prev_bookings').select('plot_no,client_name').eq('project_id', projId);
+  const existingKeys = new Set((existing||[]).map(p => `${p.plot_no}|${p.client_name}`));
+  const fresh = rows.filter(r => !existingKeys.has(`${r.plot_no}|${r.client_name}`));
+  return fresh;
+}
+
+async function runImport() {
+  const projId=IMP.projId; if(!projId) return;
+  const ic=el('imp-confirm'); if(ic) ic.disabled=true;
+  const pb=el('imp-progress'), pt=el('imp-prog-text'), pbar=el('imp-prog-bar');
+  if(pb) pb.style.display='';
+  const s2=el('imp-s2'); if(s2) s2.style.display='none';
+
+  let imported=0, skipped=0, errors=0;
+  const setProgress=(pct,msg)=>{ if(pbar) pbar.style.width=Math.min(pct,98)+'%'; if(pt) pt.textContent=msg; };
+
+  try {
+    // Dedup before insert
+    setProgress(10,'Checking for existing data…');
+    const bkRows  = IMP.parsed.bookings?.length ? await dedupeBookings(IMP.parsed.bookings, projId) : [];
+    const chqRows = IMP.parsed.cheques?.length  ? await dedupeCheques(IMP.parsed.cheques, projId)  : [];
+    const pvRows  = IMP.parsed.prev?.length     ? await dedupePrev(IMP.parsed.prev, projId)        : [];
+
+    skipped = (IMP.parsed.bookings?.length||0) - bkRows.length
+            + (IMP.parsed.cheques?.length||0)  - chqRows.length
+            + (IMP.parsed.prev?.length||0)     - pvRows.length;
+
+    const tasks=[
+      {table:'bookings',     rows:bkRows,  label:'Bookings'},
+      {table:'cheques',      rows:chqRows, label:'Cheques'},
+      {table:'prev_bookings',rows:pvRows,  label:'Prev Team'},
+    ];
+    let taskIdx=0;
+    for(const task of tasks){
+      taskIdx++;
+      if(!task.rows.length){ continue; }
+      setProgress(10+taskIdx*25, `Importing ${task.label} (${task.rows.length} rows)…`);
+      const CHUNK=50;
+      for(let i=0;i<task.rows.length;i+=CHUNK){
+        const chunk=task.rows.slice(i,i+CHUNK).map(r=>({...r,project_id:projId}));
+        const {error}=await sb.from(task.table).insert(chunk);
+        if(error){ errors+=chunk.length; console.error(task.table,error.message); }
+        else imported+=chunk.length;
+      }
+    }
+  } catch(e) {
+    errors++; console.error('Import error:',e.message);
+  }
+
+  if(pbar) pbar.style.width='100%';
+  await new Promise(r=>setTimeout(r,300));
+  if(ic) ic.disabled=false;
+  if(pb) pb.style.display='none';
+  const res=el('imp-result'); if(res) res.style.display='';
+  const ok=el('imp-ok'); if(ok) ok.textContent=imported;
+  const sk=el('imp-skip'); if(sk) sk.textContent=skipped;
+  const er=el('imp-err'); if(er) er.textContent=errors;
+  if(imported>0&&S.curProj?.id===projId) await loadProjData();
+  if(imported>0) await logAudit('import','workbook',null,`${imported} records imported, ${skipped} duplicates skipped`,'import');
+  toast(imported>0?`✓ ${imported} imported, ${skipped} skipped`:'Nothing new to import', imported>0?'ok':'inf');
+}
+

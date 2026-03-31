@@ -338,7 +338,7 @@ async function navigate(pid) {
     'p-audit':     renderProjectAudit,
     'p-settings':  renderSettings,
   };
-  map[pid]?.();
+  try { map[pid]?.(); } catch(e) { console.error('Navigate render error:', pid, e.message); toast('Page error: '+e.message,'err'); }
 }
 
 function goPage(id) {
@@ -369,14 +369,20 @@ async function loadMyProjects() {
 async function loadProjData() {
   if (!S.curProj) return;
   const pid = S.curProj.id;
-  const [b, c, p, cf] = await Promise.all([
-    sb.from('bookings').select('*').eq('project_id', pid).order('serial_no', {nullsLast:true}).order('created_at'),
-    sb.from('cheques').select('*').eq('project_id', pid).order('cheque_date', {ascending:false,nullsFirst:false}).order('created_at', {ascending:false}),
-    sb.from('prev_bookings').select('*').eq('project_id', pid).order('created_at'),
-    sb.from('custom_fields').select('*').eq('project_id', pid).order('sort_order'),
-  ]);
-  S.bookings = b.data || []; S.cheques = c.data || [];
-  S.prev = p.data || []; S.customFields = cf.data || [];
+  try {
+    const [b, c, p, cf] = await Promise.all([
+      sb.from('bookings').select('*').eq('project_id', pid).order('serial_no', {nullsLast:true}).order('created_at'),
+      sb.from('cheques').select('*').eq('project_id', pid).order('cheque_date', {ascending:false,nullsFirst:false}).order('created_at', {ascending:false}),
+      sb.from('prev_bookings').select('*').eq('project_id', pid).order('created_at'),
+      sb.from('custom_fields').select('*').eq('project_id', pid).order('sort_order'),
+    ]);
+    S.bookings = b.data || []; S.cheques = c.data || [];
+    S.prev = p.data || []; S.customFields = cf.data || [];
+  } catch(e) {
+    console.error('loadProjData error:', e.message);
+    S.bookings = []; S.cheques = []; S.prev = []; S.customFields = [];
+    toast('Error loading project data: ' + e.message, 'err');
+  }
 }
 
 
@@ -494,11 +500,19 @@ async function renderSAOverview() {
 async function renderSAProj() {
   const grid = el('saGrid');
   grid.innerHTML = `<div class="lc"><div class="spin spin-dk"></div> Loading…</div>`;
-  const [{ data: projs }, { data: allBk }, { data: allChq }] = await Promise.all([
-    sb.from('projects').select('*').order('created_at'),
-    sb.from('bookings').select('project_id,agreement_value,disbursement_status'),
-    sb.from('cheques').select('project_id,amount'),
-  ]);
+  let projs, allBk, allChq;
+  try {
+    const results = await Promise.all([
+      sb.from('projects').select('*').order('created_at'),
+      sb.from('bookings').select('project_id,agreement_value,disbursement_status'),
+      sb.from('cheques').select('project_id,amount'),
+    ]);
+    projs = results[0].data; allBk = results[1].data; allChq = results[2].data;
+    if (results[0].error) throw new Error(results[0].error.message);
+  } catch(err) {
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="ei">⚠️</div><h3>Error loading projects</h3><p>${esc(err.message)}</p><button class="btn btn-gold" onclick="renderSAProj()" style="margin-top:12px">↻ Retry</button></div>`;
+    return;
+  }
   if (!projs?.length) {
     grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="ei">🏗</div><h3>No projects yet</h3><p>Create your first project</p></div>`;
     return;
@@ -565,7 +579,25 @@ async function renderSAProj() {
       </div>`;
     grid.appendChild(d);
   });
+  // Cache for chart type switcher
+  S._saProjs = projs; S._saAllBk = allBk||[]; S._saAllChq = allChq||[];
 }
+function renderSACharts() {
+  if (!S._saProjs) return;
+  const projs = S._saProjs, allBk = S._saAllBk || [];
+  try {
+    ['saC1','saC2','saC3'].forEach(id=>{const cv=el(id);if(cv){const ex=Chart.getChart(cv);if(ex)ex.destroy();}});
+    const pNames=projs.map(p=>p.name);
+    const pBk=projs.map(p=>(allBk.filter(b=>b.project_id===p.id)).length);
+    const pVal=projs.map(p=>Math.round(allBk.filter(b=>b.project_id===p.id).reduce((s,b)=>s+(+b.agreement_value||0),0)/10000000*100)/100);
+    const ct1=el('saC1-type')?.value||'bar';
+    const ct3=el('saC3-type')?.value||'bar';
+    if(el('saC1')) mkChart('saC1',ct1,pNames,pBk,'#c47d1a','Bookings');
+    if(el('saC2')){const sg=groupCount(allBk,'loan_status');mkChart('saC2','doughnut',Object.keys(sg),Object.values(sg),['#c47d1a','#196060','#1a4870','#3a6040','#a83030','#8fa5b5'],'Count');}
+    if(el('saC3')) mkChart('saC3',ct3,pNames,pVal,'#196060','₹Cr');
+  } catch(e) { console.warn('SA charts error:', e.message); }
+}
+
 function openProjModal() {
   S.editProjId = null;
   el('projMTitle').textContent = 'New Project';
@@ -794,6 +826,7 @@ async function removeProjUser(uid, pid) {
 
 // ── DASHBOARD ────────────────────────────────────────────────
 function renderDash() {
+  if (!el('dashStats')) return;
   const bk = S.bookings; updateProjHeader();
   const totalVal = sum(bk,'agreement_value');
   const agreed  = bk.filter(b => b.loan_status === 'Agreement Completed').length;

@@ -1632,355 +1632,300 @@ function renderPlotMap() {
 }
 
 function init3DPlotMap(container, plotData) {
+  // Ensure Three.js is available
   if (typeof THREE === 'undefined') {
-    // Three.js should be loaded in <head>; retry once after short delay
-    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:#64748b"><div class="spin spin-dk"></div><p style="margin:0">Initialising 3D…</p></div>';
+    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:14px;color:#64748b"><div class="spin spin-dk"></div><p style="margin:0;font-size:14px">Initialising 3D map…</p></div>';
     setTimeout(() => {
       if (typeof THREE !== 'undefined') init3DPlotMap(container, plotData);
-      else container.innerHTML = '<div style="padding:40px;text-align:center;color:#ef4444;font-size:14px">⚠️ 3D library failed to load.<br><small>Check internet connection and refresh the page.</small></div>';
-    }, 1200);
+      else container.innerHTML = '<div style="padding:40px;text-align:center;color:#ef4444;font-size:13px">⚠️ 3D engine failed to load.<br>Please refresh the page.</div>';
+    }, 1500);
     return;
   }
 
-  // ── EXACT LAYOUT FROM PDF MASTER PLAN ────────────────────────
+  try {
+    _build3DScene(container, plotData);
+  } catch(err) {
+    console.error('3D map error:', err);
+    container.innerHTML = '<div style="padding:40px;text-align:center;color:#ef4444;font-size:13px">⚠️ 3D render error: ' + err.message + '<br><button onclick="renderPlotMap()" style="margin-top:12px;padding:8px 16px;border-radius:8px;background:#1a2942;color:#fff;border:none;cursor:pointer">↺ Retry</button></div>';
+  }
+}
+
+function _build3DScene(container, plotData) {
+  // ── EXACT LAYOUT FROM PDF MASTER PLAN ──────────────────────
   // [plotNo, col, row, widthScale, depthScale]
-  // col = east-west position, row = north-south position within column
-  // widthScale: 1=standard(11.65m), depthScale: 1=standard(13m-18.72m)
-  // Large/corner plots get wider scale. Road gaps are handled by column spacing.
-  //
-  // PDF Layout (reading from plan, north=top):
-  // ENTRY BLOCK: Plots 4-9 along entry road (horizontal strip)
-  // BLOCK 1: Cols 6-7 = Plots 11-20 (west col) | Plots 21-30 (east col), 9M road between
-  // BLOCK 2: Cols 9-11 = Plots 31-40 | 41-50 | 51-54, 9M road between blocks 1&2
-  // BLOCK 3: Cols 13-15 = Plots 55-63 | 64-71 | 72-77, 9M road between blocks 2&3
-  // BLOCK 4: Cols 17-18 = Plots 78-87 | 88-92, 9M road between blocks 3&4
-
   const LAYOUT = [
-    // ── ENTRY ROW: plots 4-9 (along 9M entry road at top) ──────
-    // These are small plots running east-west at the entry
-    [4,  0, 0, 1.0, 0.8], [5,  1, 0, 1.0, 0.8], [6,  2, 0, 1.0, 0.8],
-    [7,  3, 0, 1.0, 0.8], [8,  4, 0, 1.0, 0.8], [9,  5, 0, 1.0, 0.8],
-
-    // ── BLOCK 1: Plots 11-30 — two columns (15M road on west side) ──
-    // West column (plots 11-20): depth ~18.72m each
-    [11, 6, 0, 1.0, 1.45],[12, 6, 1, 1.0, 1.45],[13, 6, 2, 1.0, 1.45],
-    [14, 6, 3, 1.0, 1.45],[15, 6, 4, 1.0, 1.45],[16, 6, 5, 1.0, 1.45],
-    [17, 6, 6, 1.0, 1.45],[18, 6, 7, 1.0, 1.45],[19, 6, 8, 1.0, 1.45],
-    [20, 6, 9, 1.0, 1.45],
-    // East column (plots 21-30): slightly deeper (curved road edge)
-    [21, 7, 0, 1.0, 1.45],[22, 7, 1, 1.0, 1.45],[23, 7, 2, 1.0, 1.45],
-    [24, 7, 3, 1.0, 1.45],[25, 7, 4, 1.0, 1.45],[26, 7, 5, 1.0, 1.45],
-    [27, 7, 6, 1.0, 1.45],[28, 7, 7, 1.0, 1.45],[29, 7, 8, 1.0, 1.45],
-    [30, 7, 9, 1.0, 1.45],
-
-    // ── BLOCK 2: Plots 31-54 — three columns (9M road between) ──
-    // Column A (plots 31-40): 31=large corner(391sqm), 40=large corner(393sqm)
-    [31, 9, 0, 1.65, 1.5],[32, 9, 1, 1.0, 1.5],[33, 9, 2, 1.0, 1.5],
-    [34, 9, 3, 1.0, 1.5], [35, 9, 4, 1.0, 1.5],[36, 9, 5, 1.0, 1.5],
-    [37, 9, 6, 1.0, 1.5], [38, 9, 7, 1.0, 1.5],[39, 9, 8, 1.0, 1.5],
-    [40, 9, 9, 1.65, 1.5],
-    // Column B (plots 41-50): 47,48 are very large (477sqm = ~2x wide)
-    [41,10, 0, 1.0, 1.5],[42,10, 1, 1.0, 1.5],[43,10, 2, 1.0, 1.5],
-    [44,10, 3, 1.0, 1.5],[45,10, 4, 1.0, 1.5],[46,10, 5, 1.0, 1.5],
-    [47,10, 6, 2.0, 1.5],[48,10, 7, 2.0, 1.5],
-    [49,10, 8, 1.0, 1.5],[50,10, 9, 1.0, 1.5],
-    // Column C (plots 51-54): shorter column on east side
-    [51,11, 0, 1.0, 1.5],[52,11, 1, 1.0, 1.5],[53,11, 2, 1.0, 1.5],[54,11, 3, 1.0, 1.5],
-
-    // ── BLOCK 3: Plots 55-77 — three columns ─────────────────────
-    // Column D (plots 55-63): 58 is large (382sqm = ~2x wide)
-    [55,13, 0, 1.0, 1.25],[56,13, 1, 1.0, 1.25],[57,13, 2, 1.0, 1.25],
-    [58,13, 3, 2.0, 1.25],
-    [59,13, 4, 1.0, 1.25],[60,13, 5, 1.0, 1.25],[61,13, 6, 1.0, 1.25],
-    [62,13, 7, 1.0, 1.25],[63,13, 8, 1.0, 1.25],
-    // Column E (plots 64-71): 70,71 are large (395sqm = ~2x wide)
-    [64,14, 0, 1.0, 1.25],[65,14, 1, 1.0, 1.25],[66,14, 2, 1.0, 1.25],
-    [67,14, 3, 1.0, 1.25],[68,14, 4, 1.0, 1.25],[69,14, 5, 1.0, 1.25],
-    [70,14, 6, 2.0, 1.25],[71,14, 7, 2.0, 1.25],
-    // Column F (plots 72-77): shorter
-    [72,15, 0, 1.0, 1.25],[73,15, 1, 1.0, 1.25],[74,15, 2, 1.0, 1.25],
-    [75,15, 3, 1.0, 1.25],[76,15, 4, 1.0, 1.25],[77,15, 5, 1.0, 1.25],
-
-    // ── BLOCK 4: Plots 78-92 — two columns ───────────────────────
-    // Column G (plots 78-87): 82,83 slightly larger
-    [78,17, 0, 1.0, 1.15],[79,17, 1, 1.0, 1.15],[80,17, 2, 1.0, 1.15],
-    [81,17, 3, 1.0, 1.15],[82,17, 4, 1.1, 1.15],[83,17, 5, 1.1, 1.15],
-    [84,17, 6, 1.0, 1.15],[85,17, 7, 1.0, 1.15],[86,17, 8, 1.0, 1.15],
-    [87,17, 9, 1.0, 1.15],
-    // Column H (plots 88-92): shorter parallel column
-    [88,18, 0, 1.0, 1.15],[89,18, 1, 1.0, 1.15],[90,18, 2, 1.0, 1.15],
-    [91,18, 3, 1.0, 1.15],[92,18, 4, 1.0, 1.15],
+    [4,0,0,1,0.8],[5,1,0,1,0.8],[6,2,0,1,0.8],[7,3,0,1,0.8],[8,4,0,1,0.8],[9,5,0,1,0.8],
+    [11,6,0,1,1.45],[12,6,1,1,1.45],[13,6,2,1,1.45],[14,6,3,1,1.45],[15,6,4,1,1.45],
+    [16,6,5,1,1.45],[17,6,6,1,1.45],[18,6,7,1,1.45],[19,6,8,1,1.45],[20,6,9,1,1.45],
+    [21,7,0,1,1.45],[22,7,1,1,1.45],[23,7,2,1,1.45],[24,7,3,1,1.45],[25,7,4,1,1.45],
+    [26,7,5,1,1.45],[27,7,6,1,1.45],[28,7,7,1,1.45],[29,7,8,1,1.45],[30,7,9,1,1.45],
+    [31,9,0,1.65,1.5],[32,9,1,1,1.5],[33,9,2,1,1.5],[34,9,3,1,1.5],[35,9,4,1,1.5],
+    [36,9,5,1,1.5],[37,9,6,1,1.5],[38,9,7,1,1.5],[39,9,8,1,1.5],[40,9,9,1.65,1.5],
+    [41,10,0,1,1.5],[42,10,1,1,1.5],[43,10,2,1,1.5],[44,10,3,1,1.5],[45,10,4,1,1.5],
+    [46,10,5,1,1.5],[47,10,6,2,1.5],[48,10,7,2,1.5],[49,10,8,1,1.5],[50,10,9,1,1.5],
+    [51,11,0,1,1.5],[52,11,1,1,1.5],[53,11,2,1,1.5],[54,11,3,1,1.5],
+    [55,13,0,1,1.25],[56,13,1,1,1.25],[57,13,2,1,1.25],[58,13,3,2,1.25],
+    [59,13,4,1,1.25],[60,13,5,1,1.25],[61,13,6,1,1.25],[62,13,7,1,1.25],[63,13,8,1,1.25],
+    [64,14,0,1,1.25],[65,14,1,1,1.25],[66,14,2,1,1.25],[67,14,3,1,1.25],
+    [68,14,4,1,1.25],[69,14,5,1,1.25],[70,14,6,2,1.25],[71,14,7,2,1.25],
+    [72,15,0,1,1.25],[73,15,1,1,1.25],[74,15,2,1,1.25],[75,15,3,1,1.25],[76,15,4,1,1.25],[77,15,5,1,1.25],
+    [78,17,0,1,1.15],[79,17,1,1,1.15],[80,17,2,1,1.15],[81,17,3,1,1.15],[82,17,4,1.1,1.15],
+    [83,17,5,1.1,1.15],[84,17,6,1,1.15],[85,17,7,1,1.15],[86,17,8,1,1.15],[87,17,9,1,1.15],
+    [88,18,0,1,1.15],[89,18,1,1,1.15],[90,18,2,1,1.15],[91,18,3,1,1.15],[92,18,4,1,1.15],
   ];
 
-  // ── DIMENSIONS ────────────────────────────────────────────────
-  const BASE_W = 2.0;   // base plot width (X) — 11.65m real
-  const BASE_D = 2.2;   // base plot depth (Z) — 13m real
-  const GAP    = 0.12;  // gap between plots in same column
-  const COL_GAP= 0.15;  // gap between adjacent columns (within same block)
-  // Road widths between blocks (9M road = ~1.55 units)
-  const ROAD   = 1.55;
-  // Block start columns and their X offsets:
-  //   Entry: cols 0-5
-  //   Block1: cols 6-7 (after entry gap)
-  //   Block2: cols 9-11 (after 9M road)
-  //   Block3: cols 13-15 (after 9M road)
-  //   Block4: cols 17-18 (after 9M road)
-  const BLOCK_OFFSETS = {
-    0:0, 1:1, 2:2, 3:3, 4:4, 5:5,             // entry cols
-    6:7, 7:8,                                    // block1 (gap=1 after entry)
-    9:10, 10:11, 11:12,                          // block2 (road gap after col7)
-    13:14, 14:15, 15:16,                         // block3
-    17:18, 18:19,                                // block4
-  };
-  const u = BASE_W + COL_GAP;
-  const ROAD_AFTER = {7: ROAD, 11: ROAD, 15: ROAD}; // road after these cols
-
-  // Compute actual X for each logical column
-  let xAccum = 0, prevCol = -1;
+  // ── DIMENSIONS & COLUMN X POSITIONS ──────────────────────────
+  const BW=2.0, BD=2.2, GAP=0.12, CGAP=0.15, ROAD=1.55;
+  const u = BW + CGAP;
+  const ROAD_AFTER = {7:true, 11:true, 15:true};
+  let xAcc=0, prevCol=-1;
   const COL_X = {};
-  const sortedCols = [...new Set(LAYOUT.map(e=>e[1]))].sort((a,b)=>a-b);
-  sortedCols.forEach(col => {
-    if (prevCol >= 0) {
-      const gap = ROAD_AFTER[prevCol] ? ROAD_AFTER[prevCol] : (col - prevCol > 1 ? ROAD : COL_GAP);
-      xAccum += u + gap;
-    }
-    COL_X[col] = xAccum;
-    prevCol = col;
+  [...new Set(LAYOUT.map(e=>e[1]))].sort((a,b)=>a-b).forEach(col=>{
+    if(prevCol>=0){ xAcc += u + (ROAD_AFTER[prevCol] ? ROAD : (col-prevCol>1 ? ROAD : CGAP)); }
+    COL_X[col]=xAcc; prevCol=col;
   });
+  const colX = col => COL_X[col]||0;
+  const rowZ = row => row*(BD+GAP);
+  const gridW = Math.max(...Object.values(COL_X))+BW;
+  const gridD = 10*(BD+GAP);
 
-  const colX  = col => (COL_X[col] || 0);
-  const rowZ  = row => row * (BASE_D + GAP);
-  const gridW = Math.max(...Object.values(COL_X)) + BASE_W;
-  const gridD = 10 * (BASE_D + GAP);
-
-  // ── SCENE ─────────────────────────────────────────────────────
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xedeae3);
-
-  const W = container.clientWidth || 900;
-  const H = container.clientHeight || 600;
-  const camera = new THREE.PerspectiveCamera(40, W/H, 0.1, 500);
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(W, H);
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // ── RENDERER ──────────────────────────────────────────────────
+  const W=container.clientWidth||900, H=container.clientHeight||600;
+  const renderer = new THREE.WebGLRenderer({antialias:true, alpha:false});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.setSize(W,H);
+  renderer.setClearColor(0xedeae3,1);
+  renderer.shadowMap.enabled=true;
   container.appendChild(renderer.domElement);
 
+  // ── SCENE & CAMERA ────────────────────────────────────────────
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0xedeae3, 60, 120);
+  const camera = new THREE.PerspectiveCamera(40, W/H, 0.1, 300);
+
   // ── LIGHTS ────────────────────────────────────────────────────
-  scene.add(new THREE.AmbientLight(0xffffff, 0.62));
-  const sun = new THREE.DirectionalLight(0xfff8ea, 1.3);
-  sun.position.set(30, 50, 20);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  const shadowCam = sun.shadow.camera;
-  shadowCam.left=-60; shadowCam.right=60; shadowCam.top=60; shadowCam.bottom=-60; shadowCam.near=0.5; shadowCam.far=200;
+  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+  const sun = new THREE.DirectionalLight(0xfff8ea, 1.2);
+  sun.position.set(30,50,20);
+  sun.castShadow=true;
+  sun.shadow.mapSize.width=2048; sun.shadow.mapSize.height=2048;
+  sun.shadow.camera.left=-70; sun.shadow.camera.right=70;
+  sun.shadow.camera.top=70; sun.shadow.camera.bottom=-70;
+  sun.shadow.camera.near=0.5; sun.shadow.camera.far=250;
   scene.add(sun);
-  scene.add(Object.assign(new THREE.DirectionalLight(0xcce8ff, 0.3), {position: new THREE.Vector3(-20,15,-10)}));
+  const fill = new THREE.DirectionalLight(0xcce8ff, 0.28);
+  fill.position.set(-20,15,-10); scene.add(fill);
 
   // ── GROUND ────────────────────────────────────────────────────
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(gridW + 16, gridD + 16),
-    new THREE.MeshLambertMaterial({ color: 0xdbd5c8 })
-  );
-  ground.rotation.x = -Math.PI/2;
-  ground.position.set(gridW/2, -0.02, gridD/2);
-  ground.receiveShadow = true;
+  const gm = new THREE.MeshLambertMaterial({color:0xdbd5c8});
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(gridW+18,gridD+18), gm);
+  ground.rotation.x=-Math.PI/2;
+  ground.position.set(gridW/2,-0.02,gridD/2);
+  ground.receiveShadow=true;
   scene.add(ground);
 
-  // ── ROADS (between blocks) ────────────────────────────────────
-  const roadMat = new THREE.MeshLambertMaterial({ color: 0xc0b8ae });
-  const laneMat = new THREE.MeshLambertMaterial({ color: 0xf5eed8 });
-  [[7, ROAD], [11, ROAD], [15, ROAD]].forEach(([afterCol, rw]) => {
-    if (COL_X[afterCol] === undefined) return;
-    const rx = COL_X[afterCol] + BASE_W + COL_GAP/2;
-    const roadMesh = new THREE.Mesh(new THREE.PlaneGeometry(rw, gridD+8), roadMat);
-    roadMesh.rotation.x = -Math.PI/2;
-    roadMesh.position.set(rx + rw/2, 0, gridD/2);
-    roadMesh.receiveShadow = true;
-    scene.add(roadMesh);
-    const lane = new THREE.Mesh(new THREE.PlaneGeometry(0.1, gridD+6), laneMat);
-    lane.rotation.x = -Math.PI/2;
-    lane.position.set(rx + rw/2, 0.008, gridD/2);
-    scene.add(lane);
+  // ── ROADS ─────────────────────────────────────────────────────
+  const roadMat = new THREE.MeshLambertMaterial({color:0xc0b8ae});
+  const laneMat = new THREE.MeshLambertMaterial({color:0xf0e8d0});
+  [7,11,15].forEach(afterCol=>{
+    if(COL_X[afterCol]===undefined) return;
+    const rx=COL_X[afterCol]+BW+CGAP/2;
+    const rm=new THREE.Mesh(new THREE.PlaneGeometry(ROAD,gridD+8),roadMat);
+    rm.rotation.x=-Math.PI/2; rm.position.set(rx+ROAD/2,0,gridD/2);
+    rm.receiveShadow=true; scene.add(rm);
+    const lm=new THREE.Mesh(new THREE.PlaneGeometry(0.1,gridD+6),laneMat);
+    lm.rotation.x=-Math.PI/2; lm.position.set(rx+ROAD/2,0.01,gridD/2);
+    scene.add(lm);
   });
 
-  // ── PLOT BOXES ────────────────────────────────────────────────
-  const plotMeshes = [];
-  LAYOUT.forEach(([pn, col, row, ws, ds]) => {
-    const pd  = plotData[pn] || { status:'available', plot_no:pn };
-    const cfg = PLOT_STATUS[pd.status] || PLOT_STATUS.available;
-    const x   = colX(col);
-    const z   = rowZ(row);
-    const pw  = BASE_W * (ws||1) - 0.1;
-    const pd_ = BASE_D * (ds||1) - 0.1;
+  // ── PLOTS: use TWO separate meshes (top + body) ───────────────
+  // Avoids multi-material array which causes the read-only error
+  const plotGroups = []; // {group, plotNo, data, baseY}
 
-    const h = pd.status === 'completed' ? 0.95
-            : pd.status === 'booked'    ? 0.65
-            : pd.status === 'sanction'  ? 0.78
-            : pd.status === 'prev'      ? 0.52
-            : pd.status === 'phase2'    ? 0.42
-            : 0.22;
+  LAYOUT.forEach(([pn,col,row,ws,ds])=>{
+    const pd=plotData[pn]||{status:'available',plot_no:pn};
+    const cfg=PLOT_STATUS[pd.status]||PLOT_STATUS.available;
+    const x=colX(col);
+    const z=rowZ(row);
+    const pw=BW*(ws||1)-0.1;
+    const pde=BD*(ds||1)-0.1;
+    const h = pd.status==='completed'?0.90
+             :pd.status==='booked'   ?0.62
+             :pd.status==='sanction' ?0.76
+             :pd.status==='prev'     ?0.50
+             :pd.status==='phase2'   ?0.40
+             :0.20;
 
-    const topC  = new THREE.Color(cfg.top3d  || cfg.bg);
-    const sideC = new THREE.Color(cfg.side3d || cfg.border);
-    const mats  = [
-      new THREE.MeshLambertMaterial({color:sideC}),
-      new THREE.MeshLambertMaterial({color:sideC}),
-      new THREE.MeshLambertMaterial({color:topC}),
-      new THREE.MeshLambertMaterial({color:sideC}),
-      new THREE.MeshLambertMaterial({color:sideC}),
-      new THREE.MeshLambertMaterial({color:sideC}),
-    ];
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(pw, h, pd_), mats);
-    mesh.position.set(x + BASE_W*(ws||1)/2 - BASE_W/2, h/2, z + BASE_D*(ds||1)/2 - BASE_D/2);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.userData = { plotNo:pn, data:pd, baseY:h/2, h, ws, ds };
-    scene.add(mesh);
-    plotMeshes.push(mesh);
+    const cx=x+BW*(ws||1)/2-BW/2;
+    const cz=z+BD*(ds||1)/2-BD/2;
 
-    // Number label sprite
-    const cv = document.createElement('canvas');
+    // Body (sides) - single material
+    const bodyMat=new THREE.MeshLambertMaterial({color:new THREE.Color(cfg.side3d||cfg.border)});
+    const bodyGeo=new THREE.BoxGeometry(pw,h,pde);
+    const body=new THREE.Mesh(bodyGeo,bodyMat);
+    body.position.set(cx,h/2,cz);
+    body.castShadow=true; body.receiveShadow=true;
+    scene.add(body);
+
+    // Top cap - single material, slightly inset
+    const topMat=new THREE.MeshLambertMaterial({color:new THREE.Color(cfg.top3d||cfg.bg)});
+    const topGeo=new THREE.BoxGeometry(pw-0.04,0.06,pde-0.04);
+    const top=new THREE.Mesh(topGeo,topMat);
+    top.position.set(cx,h+0.01,cz);
+    top.castShadow=true;
+    scene.add(top);
+
+    // Number label
+    const cv=document.createElement('canvas');
     cv.width=128; cv.height=72;
-    const ctx = cv.getContext('2d');
-    ctx.font = 'bold 40px Arial';
-    ctx.fillStyle = cfg.text || '#374151';
+    const ctx=cv.getContext('2d');
+    ctx.font='bold 40px Arial';
+    ctx.fillStyle=cfg.text||'#374151';
     ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText(String(pn), 64, 36);
-    const sp = new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),transparent:true}));
-    sp.scale.set(BASE_W*(ws||1)*0.8, 0.55, 1);
-    sp.position.set(x + BASE_W*(ws||1)/2 - BASE_W/2, h+0.45, z + BASE_D*(ds||1)/2 - BASE_D/2);
+    ctx.fillText(String(pn),64,36);
+    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),transparent:true}));
+    sp.scale.set(BW*(ws||1)*0.8,0.55,1);
+    sp.position.set(cx,h+0.55,cz);
     scene.add(sp);
+
+    // Group for raycasting - store both body and top
+    body.userData={plotNo:pn,data:pd,baseY:h/2,topMesh:top,topBaseY:h+0.01,spriteMesh:sp,spriteBaseY:h+0.55};
+    top.userData={plotNo:pn,data:pd,isTop:true,bodyMesh:body};
+    plotGroups.push(body);
   });
 
   // ── CAMERA ORBIT ──────────────────────────────────────────────
-  const center = new THREE.Vector3(gridW/2, 0, gridD/2);
-  let theta = 0.6, phi = 0.82, radius = Math.max(gridW, gridD) * 1.45;
-  let isDragging = false, wasDragging = false, lx=0, ly=0;
+  const center = new THREE.Vector3(gridW/2,0,gridD/2);
+  let theta=0.6, phi=0.82, radius=Math.max(gridW,gridD)*1.45;
+  let isDragging=false, wasDragging=false, lx=0, ly=0;
 
-  function updateCamera() {
-    camera.position.set(
-      center.x + radius * Math.sin(phi) * Math.sin(theta),
-      center.y + radius * Math.cos(phi),
-      center.z + radius * Math.sin(phi) * Math.cos(theta)
-    );
+  function updateCamera(){
+    const x=center.x+radius*Math.sin(phi)*Math.sin(theta);
+    const y=center.y+radius*Math.cos(phi);
+    const z2=center.z+radius*Math.sin(phi)*Math.cos(theta);
+    camera.position.set(x,y,z2);
     camera.lookAt(center);
   }
   updateCamera();
 
-  const dom = renderer.domElement;
-  dom.style.cursor = 'grab';
-
-  dom.addEventListener('mousedown', e => { isDragging=true; wasDragging=false; lx=e.clientX; ly=e.clientY; dom.style.cursor='grabbing'; });
-  window.addEventListener('mouseup', () => { isDragging=false; dom.style.cursor='grab'; });
-  window.addEventListener('mousemove', e => {
-    if (!isDragging) return;
-    wasDragging = true;
-    theta -= (e.clientX-lx)*0.007;
-    phi = Math.max(0.15, Math.min(1.48, phi+(e.clientY-ly)*0.007));
-    lx=e.clientX; ly=e.clientY;
-    updateCamera();
+  const dom=renderer.domElement;
+  dom.style.cursor='grab';
+  dom.addEventListener('mousedown',e=>{isDragging=true;wasDragging=false;lx=e.clientX;ly=e.clientY;dom.style.cursor='grabbing';});
+  window.addEventListener('mouseup',()=>{isDragging=false;dom.style.cursor='grab';});
+  window.addEventListener('mousemove',e=>{
+    if(!isDragging)return;
+    wasDragging=true;
+    theta-=(e.clientX-lx)*0.007;
+    phi=Math.max(0.15,Math.min(1.48,phi+(e.clientY-ly)*0.007));
+    lx=e.clientX;ly=e.clientY;updateCamera();
   });
-  dom.addEventListener('wheel', e => {
-    e.preventDefault();
-    radius = Math.max(8, Math.min(120, radius+e.deltaY*0.06));
-    updateCamera();
-  }, {passive:false});
+  dom.addEventListener('wheel',e=>{e.preventDefault();radius=Math.max(8,Math.min(120,radius+e.deltaY*0.06));updateCamera();},{passive:false});
 
   // Touch
-  let lt=null, lpd=0;
-  dom.addEventListener('touchstart', e => { if(e.touches.length===1){lt=e.touches[0];isDragging=true;wasDragging=false;} if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;lpd=Math.sqrt(dx*dx+dy*dy);} },{passive:true});
-  dom.addEventListener('touchmove', e => {
-    e.preventDefault();
-    if(e.touches.length===1&&lt){wasDragging=true;theta-=(e.touches[0].clientX-lt.clientX)*0.009;phi=Math.max(0.15,Math.min(1.48,phi+(e.touches[0].clientY-lt.clientY)*0.009));lt=e.touches[0];updateCamera();}
-    if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;const d=Math.sqrt(dx*dx+dy*dy);radius=Math.max(8,Math.min(120,radius-(d-lpd)*0.07));lpd=d;updateCamera();}
-  },{passive:false});
+  let lt=null,lpd=0;
+  dom.addEventListener('touchstart',e=>{if(e.touches.length===1){lt=e.touches[0];isDragging=true;wasDragging=false;}if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;lpd=Math.sqrt(dx*dx+dy*dy);}},{passive:true});
+  dom.addEventListener('touchmove',e=>{e.preventDefault();if(e.touches.length===1&&lt){wasDragging=true;theta-=(e.touches[0].clientX-lt.clientX)*0.009;phi=Math.max(0.15,Math.min(1.48,phi+(e.touches[0].clientY-lt.clientY)*0.009));lt=e.touches[0];updateCamera();}if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;const d=Math.sqrt(dx*dx+dy*dy);radius=Math.max(8,Math.min(120,radius-(d-lpd)*0.07));lpd=d;updateCamera();}},{passive:false});
   dom.addEventListener('touchend',()=>{isDragging=false;lt=null;});
 
-  // ── HOVER TOOLTIP ─────────────────────────────────────────────
-  const raycaster = new THREE.Raycaster();
-  const mouse = new THREE.Vector2();
-  let hoveredMesh = null;
+  // ── HOVER VIA SCALE (avoids position mutation) ────────────────
+  const raycaster=new THREE.Raycaster();
+  const mouse2=new THREE.Vector2();
+  let hoveredBody=null;
+  const HOVER_SCALE=new THREE.Vector3(1,1.6,1);
+  const BASE_SCALE=new THREE.Vector3(1,1,1);
 
-  const tip = document.createElement('div');
-  tip.style.cssText = 'position:absolute;display:none;z-index:999;pointer-events:none;background:#fff;border-radius:12px;padding:14px 18px;box-shadow:0 8px 32px rgba(0,0,0,.16);border:1px solid #e2e8f0;font-family:Outfit,sans-serif;min-width:215px;max-width:280px;';
+  const tip=document.createElement('div');
+  tip.style.cssText='position:absolute;display:none;z-index:999;pointer-events:none;background:#fff;border-radius:12px;padding:14px 18px;box-shadow:0 8px 32px rgba(0,0,0,.16);border:1px solid #e2e8f0;font-family:Outfit,sans-serif;min-width:215px;max-width:280px;';
   container.style.position='relative';
   container.appendChild(tip);
 
-  dom.addEventListener('mousemove', e => {
-    if (isDragging) { tip.style.display='none'; return; }
-    const rect = dom.getBoundingClientRect();
-    mouse.x=((e.clientX-rect.left)/rect.width)*2-1;
-    mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
-    raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObjects(plotMeshes);
-    if (hits.length) {
-      const mesh = hits[0].object;
-      if (mesh !== hoveredMesh) {
-        if (hoveredMesh) hoveredMesh.position.set(hoveredMesh.position.x, hoveredMesh.userData.baseY, hoveredMesh.position.z);
-        hoveredMesh = mesh;
-        mesh.position.set(mesh.position.x, mesh.userData.baseY + 0.3, mesh.position.z);
+  function showTip(e,pd){
+    const cfg=PLOT_STATUS[pd.status]||PLOT_STATUS.available;
+    const fmt=n=>n?'₹'+Number(n).toLocaleString('en-IN'):'—';
+    const rect=dom.getBoundingClientRect();
+    const tx=e.clientX-rect.left+18, ty=e.clientY-rect.top-10;
+    tip.style.left=(tx+280>rect.width?tx-300:tx)+'px';
+    tip.style.top=(ty+200>rect.height?ty-180:ty)+'px';
+    tip.style.display='block';
+    tip.innerHTML=`
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #f1f5f9">
+        <div style="width:11px;height:11px;border-radius:50%;background:${cfg.color};flex-shrink:0"></div>
+        <span style="font-size:15px;font-weight:700">Plot ${pd.plot_no}</span>
+        <span style="margin-left:auto;font-size:10px;padding:2px 9px;border-radius:10px;background:${cfg.bg};color:${cfg.text};font-weight:700;border:1px solid ${cfg.border}">${cfg.label}</span>
+      </div>
+      ${pd.client_name
+        ?`<div style="margin-bottom:6px"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Client</div><div style="font-size:13px;font-weight:600;margin-top:2px">${pd.client_name}</div>${pd.contact?`<div style="font-size:12px;color:#64748b;margin-top:1px">📞 ${pd.contact}</div>`:''}</div>`
+        :`<div style="color:#94a3b8;font-size:12px;margin-bottom:6px;font-style:italic">Available for booking</div>`}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        ${pd.plot_size?`<div><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Area</div><div style="font-size:13px;font-weight:700;margin-top:2px">${pd.plot_size} sqft</div></div>`:''}
+        ${pd.agreement_value?`<div><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Value</div><div style="font-size:13px;font-weight:700;margin-top:2px">${fmt(pd.agreement_value)}</div></div>`:''}
+      </div>
+      <div style="margin-top:9px;font-size:10px;color:#94a3b8;text-align:center">Click to view full details →</div>`;
+  }
+
+  dom.addEventListener('mousemove',e=>{
+    if(isDragging){tip.style.display='none';return;}
+    const rect=dom.getBoundingClientRect();
+    mouse2.x=((e.clientX-rect.left)/rect.width)*2-1;
+    mouse2.y=-((e.clientY-rect.top)/rect.height)*2+1;
+    raycaster.setFromCamera(mouse2,camera);
+    // Raycast only body meshes
+    const hits=raycaster.intersectObjects(plotGroups);
+    if(hits.length){
+      let bodyMesh=hits[0].object;
+      if(bodyMesh.userData.isTop) bodyMesh=bodyMesh.userData.bodyMesh;
+      if(bodyMesh!==hoveredBody){
+        if(hoveredBody) hoveredBody.scale.copy(BASE_SCALE);
+        hoveredBody=bodyMesh;
+        hoveredBody.scale.copy(HOVER_SCALE);
         dom.style.cursor='pointer';
       }
-      const pd = mesh.userData.data;
-      const cfg = PLOT_STATUS[pd.status]||PLOT_STATUS.available;
-      const fmt = n => n?'₹'+Number(n).toLocaleString('en-IN'):'—';
-      // Keep tooltip inside viewport
-      const tx = e.clientX-rect.left+18, ty = e.clientY-rect.top-10;
-      tip.style.left = (tx+280 > rect.width ? tx-300 : tx)+'px';
-      tip.style.top  = (ty+200 > rect.height ? ty-180 : ty)+'px';
-      tip.style.display='block';
-      tip.innerHTML=`
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #f1f5f9">
-          <div style="width:11px;height:11px;border-radius:50%;background:${cfg.color};flex-shrink:0;box-shadow:0 0 0 2px ${cfg.border}50"></div>
-          <span style="font-size:15px;font-weight:700">Plot ${pd.plot_no}</span>
-          <span style="margin-left:auto;font-size:10px;padding:2px 9px;border-radius:10px;background:${cfg.bg};color:${cfg.text};font-weight:700;border:1px solid ${cfg.border}">${cfg.label}</span>
-        </div>
-        ${pd.client_name
-          ?`<div style="margin-bottom:6px"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Client</div><div style="font-size:13px;font-weight:600;margin-top:2px">${pd.client_name}</div>${pd.contact?`<div style="font-size:12px;color:#64748b;margin-top:1px">📞 ${pd.contact}</div>`:''}</div>`
-          :`<div style="color:#94a3b8;font-size:12px;margin-bottom:6px;font-style:italic">Available for booking</div>`}
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          ${pd.plot_size?`<div><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Area</div><div style="font-size:13px;font-weight:700;margin-top:2px">${pd.plot_size} sqft</div></div>`:''}
-          ${pd.agreement_value?`<div><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Value</div><div style="font-size:13px;font-weight:700;margin-top:2px">${fmt(pd.agreement_value)}</div></div>`:''}
-        </div>
-        <div style="margin-top:9px;font-size:10px;color:#94a3b8;text-align:center">Click to view full details →</div>`;
+      showTip(e,bodyMesh.userData.data);
     } else {
-      if (hoveredMesh) { hoveredMesh.position.y=hoveredMesh.userData.baseY; hoveredMesh=null; dom.style.cursor='grab'; }
+      if(hoveredBody){hoveredBody.scale.copy(BASE_SCALE);hoveredBody=null;dom.style.cursor='grab';}
       tip.style.display='none';
     }
   });
-  dom.addEventListener('mouseleave',()=>{ tip.style.display='none'; if(hoveredMesh){hoveredMesh.position.set(hoveredMesh.position.x,hoveredMesh.userData.baseY,hoveredMesh.position.z);hoveredMesh=null;} });
+  dom.addEventListener('mouseleave',()=>{
+    tip.style.display='none';
+    if(hoveredBody){hoveredBody.scale.copy(BASE_SCALE);hoveredBody=null;}
+  });
 
-  // Click — open detail (only if not dragging)
-  dom.addEventListener('click', e => {
-    if (wasDragging) { wasDragging=false; return; }
+  // Click to open detail
+  dom.addEventListener('click',e=>{
+    if(wasDragging){wasDragging=false;return;}
     const rect=dom.getBoundingClientRect();
-    mouse.x=((e.clientX-rect.left)/rect.width)*2-1;
-    mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
-    raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObjects(plotMeshes);
-    if (hits.length) {
-      const pd = hits[0].object.userData.data;
-      const bk = S.bookings.find(b=>parseInt(b.plot_no)===pd.plot_no);
-      const pv = S.prev.find(x=>parseInt(x.plot_no)===pd.plot_no);
-      openPlotDetail(pd.plot_no, pd.status, bk, pv);
+    mouse2.x=((e.clientX-rect.left)/rect.width)*2-1;
+    mouse2.y=-((e.clientY-rect.top)/rect.height)*2+1;
+    raycaster.setFromCamera(mouse2,camera);
+    const hits=raycaster.intersectObjects(plotGroups);
+    if(hits.length){
+      let bodyMesh=hits[0].object;
+      if(bodyMesh.userData.isTop) bodyMesh=bodyMesh.userData.bodyMesh;
+      const pd=bodyMesh.userData.data;
+      const bk=S.bookings.find(b=>parseInt(b.plot_no)===pd.plot_no);
+      const pv=S.prev.find(x=>parseInt(x.plot_no)===pd.plot_no);
+      openPlotDetail(pd.plot_no,pd.status,bk,pv);
     }
   });
 
   // ── RESIZE ────────────────────────────────────────────────────
-  const ro = new ResizeObserver(()=>{
-    const w=container.clientWidth, h=container.clientHeight||600;
-    renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();
+  const ro=new ResizeObserver(()=>{
+    const w=container.clientWidth,h=container.clientHeight||600;
+    renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();
   });
   ro.observe(container);
 
   // ── ANIMATE ───────────────────────────────────────────────────
   let animId;
-  const animate=()=>{ animId=requestAnimationFrame(animate); renderer.render(scene,camera); };
+  const animate=()=>{animId=requestAnimationFrame(animate);renderer.render(scene,camera);};
   animate();
 
-  container._cleanup=()=>{ cancelAnimationFrame(animId); ro.disconnect(); renderer.dispose(); plotMeshes.forEach(m=>{m.geometry.dispose();Array.isArray(m.material)&&m.material.forEach(mt=>mt.dispose());}); };
+  container._cleanup=()=>{
+    cancelAnimationFrame(animId);ro.disconnect();
+    renderer.dispose();
+    plotGroups.forEach(m=>{m.geometry&&m.geometry.dispose();m.material&&m.material.dispose();});
+  };
 }
 
 

@@ -1581,18 +1581,21 @@ function getPlotStatus(plotNo) {
 
 function renderPlotMap() {
   if (!S.curProj) return;
-  const totalPlots = S.curProj.total_plots || (()=>{
-    const maxBk = S.bookings.reduce((m,b)=>Math.max(m,parseInt(b.plot_no)||0),0);
-    const maxPv = S.prev.reduce((m,p)=>Math.max(m,parseInt(p.plot_no)||0),0);
-    return Math.ceil(Math.max(maxBk,maxPv,1)/10)*10||92;
-  })();
 
-  // Build plot data payload for 3D renderer
+  // Collect all booked/prev plot numbers to derive range
+  const bkNums = S.bookings.map(b => parseInt(b.plot_no)).filter(n => !isNaN(n) && n <= 300);
+  const pvNums = S.prev.map(p => parseInt(p.plot_no)).filter(n => !isNaN(n) && n <= 300);
+  const allNums = [...bkNums, ...pvNums];
+  const maxPlot = allNums.length ? Math.max(...allNums) : 92;
+  // Start from 11 (remove old top row 1-10 as instructed)
+  const START_PLOT = 11;
+  const totalPlots = Math.max(maxPlot, 92);
+
+  // Build plot data
   const plotData = {};
-  for (let i = 1; i <= totalPlots; i++) {
-    const pn = i;
-    const bk = S.bookings.find(b => parseInt(b.plot_no) === pn);
-    const pv = S.prev.find(x => parseInt(x.plot_no) === pn);
+  for (let i = START_PLOT; i <= totalPlots; i++) {
+    const bk = S.bookings.find(b => parseInt(b.plot_no) === i);
+    const pv = S.prev.find(x => parseInt(x.plot_no) === i);
     let status = 'available';
     if (pv) status = 'prev';
     else if (bk) {
@@ -1601,350 +1604,381 @@ function renderPlotMap() {
       else if (bk.bank_name === 'Phase 2') status = 'phase2';
       else status = 'booked';
     }
-    plotData[pn] = {
-      status,
-      plot_no: pn,
+    plotData[i] = {
+      status, plot_no: i,
       client_name:     bk?.client_name || pv?.client_name || '',
       contact:         bk?.contact || '',
-      plot_size:       bk?.plot_size || pv?.plot_size || '',
+      plot_size:       bk?.plot_size   || pv?.plot_size   || '',
       agreement_value: bk?.agreement_value || pv?.agreement_value || '',
       bank_name:       bk?.bank_name || '',
-      loan_status:     bk?.loan_status || status,
+      loan_status:     bk?.loan_status || '',
     };
   }
 
-  // Update summary bar
+  // Summary counts
   const counts = {};
   Object.values(plotData).forEach(p => counts[p.status] = (counts[p.status]||0)+1);
   const smBar = el('plotSummaryBar');
   if (smBar) smBar.innerHTML = Object.entries(counts).map(([st,cnt])=>{
-    const cfg = PLOT_STATUS[st]; if(!cfg) return '';
+    const cfg = PLOT_STATUS[st]; if(!cfg||!cnt) return '';
     return `<div style="display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;background:${cfg.bg};border:1.5px solid ${cfg.border}">
       <div style="width:9px;height:9px;border-radius:50%;background:${cfg.color}"></div>
       <span style="font-size:12px;font-weight:600;color:${cfg.text}">${cfg.label}: ${cnt}</span></div>`;
   }).join('');
 
-  // Render the 3D canvas inline using Three.js
   const container = el('plot3dContainer');
   if (!container) return;
+  // Cleanup previous renderer
+  if (container._cleanup) { container._cleanup(); }
   container.innerHTML = '';
 
-  // Store data globally for the 3D renderer
-  window._plotData   = plotData;
-  window._totalPlots = totalPlots;
-  window._plotStatus = PLOT_STATUS;
-
-  init3DPlotMap(container, plotData, totalPlots);
+  init3DPlotMap(container, plotData, START_PLOT, totalPlots);
 }
 
-function init3DPlotMap(container, plotData, totalPlots) {
+function init3DPlotMap(container, plotData, startPlot, totalPlots) {
   if (typeof THREE === 'undefined') {
-    container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--inkf)"><div class="spin"></div><p style="margin-top:12px">Loading 3D engine…</p></div>';
+    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:#64748b"><div class="spin spin-dk"></div><p>Loading 3D engine…</p></div>';
     const script = document.createElement('script');
     script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-    script.onload = () => init3DPlotMap(container, plotData, totalPlots);
+    script.onload = () => init3DPlotMap(container, plotData, startPlot, totalPlots);
+    script.onerror = () => { container.innerHTML = '<div style="padding:40px;text-align:center;color:#ef4444">Failed to load 3D engine. Check internet connection.</div>'; };
     document.head.appendChild(script);
     return;
   }
 
-  const COLS = 10;
-  const ROWS = Math.ceil(totalPlots / COLS);
-  const PLOT_W = 2.2, PLOT_D = 2.2, GAP = 0.25, ROAD_W = 1.2;
+  // ── LAYOUT DEFINITION ─────────────────────────────────────────
+  // Based on SOTR master plan PDF: plots 11-92 in single rows per block
+  // Each entry: [gridCol, gridRow]  (col=X axis west→east, row=Z axis south→north)
+  // Roads are implicit gaps between rows
+  // Layout from PDF (single row per block, reading layout carefully):
+  //
+  // Row 0 (southernmost): 11,12,13,14,15,16,17,18,19,20
+  // Road gap
+  // Row 1: 21,22,23,24,25,26,27,28,29,30
+  // Road gap
+  // Row 2: 31,32,33,34,35,36,37,38,39,40
+  // Road gap
+  // Row 3: 41,42,43,44,45,46,47,48,49,50
+  // Road gap
+  // Row 4: 51,52,53,54  (only 4 wide on left side)
+  // Road gap
+  // Row 5: 55,56,57,58,59,60,61,62,63
+  // Road gap
+  // Row 6: 64,65,66,67,68,69,70,71
+  // Road gap
+  // Row 7: 72,73,74,75,76,77
+  // Road gap
+  // Row 8: 78,79,80,81,82,83,84,85,86,87
+  // Road gap
+  // Row 9 (northernmost): 88,89,90,91,92
 
-  // Total grid size
-  const gridW = COLS * PLOT_W + (COLS-1) * GAP;
-  const gridD = ROWS * PLOT_D + (ROWS-1) * GAP;
+  const PLOT_LAYOUT = [
+    // [plotNo, col, row]
+    // Row 0
+    [11,0,0],[12,1,0],[13,2,0],[14,3,0],[15,4,0],[16,5,0],[17,6,0],[18,7,0],[19,8,0],[20,9,0],
+    // Row 1
+    [21,0,1],[22,1,1],[23,2,1],[24,3,1],[25,4,1],[26,5,1],[27,6,1],[28,7,1],[29,8,1],[30,9,1],
+    // Row 2
+    [31,0,2],[32,1,2],[33,2,2],[34,3,2],[35,4,2],[36,5,2],[37,6,2],[38,7,2],[39,8,2],[40,9,2],
+    // Row 3
+    [41,0,3],[42,1,3],[43,2,3],[44,3,3],[45,4,3],[46,5,3],[47,6,3],[48,7,3],[49,8,3],[50,9,3],
+    // Row 4 (shorter row left side, based on PDF)
+    [51,0,4],[52,1,4],[53,2,4],[54,3,4],
+    // Row 5 (shifted - PDF shows offset)
+    [55,0,5],[56,1,5],[57,2,5],[58,3,5],[59,4,5],[60,5,5],[61,6,5],[62,7,5],[63,8,5],
+    // Row 6
+    [64,0,6],[65,1,6],[66,2,6],[67,3,6],[68,4,6],[69,5,6],[70,6,6],[71,7,6],
+    // Row 7
+    [72,0,7],[73,1,7],[74,2,7],[75,3,7],[76,4,7],[77,5,7],
+    // Row 8
+    [78,0,8],[79,1,8],[80,2,8],[81,3,8],[82,4,8],[83,5,8],[84,6,8],[85,7,8],[86,8,8],[87,9,8],
+    // Row 9
+    [88,0,9],[89,1,9],[90,2,9],[91,3,9],[92,4,9],
+  ];
 
-  // Scene
-  const scene    = new THREE.Scene();
-  scene.background = new THREE.Color(0xf8f5f0);
-  scene.fog = new THREE.Fog(0xf8f5f0, 40, 100);
+  // ── SCENE SETUP ───────────────────────────────────────────────
+  const PLOT_W = 2.4, PLOT_D = 2.0, GAP_X = 0.2, GAP_Z = 0.2, ROAD_Z = 1.4;
+  const ROWS = 10, COLS = 10;
+  // Each row offset includes road gap
+  const rowZ = r => r * (PLOT_D + GAP_Z + ROAD_Z);
+  const colX = c => c * (PLOT_W + GAP_X);
+  const gridW = COLS * PLOT_W + (COLS-1) * GAP_X;
+  const gridD = rowZ(ROWS - 1) + PLOT_D;
 
-  // Camera - isometric-ish perspective
-  const aspect = container.clientWidth / container.clientHeight || 16/9;
-  const camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 200);
-  camera.position.set(gridW * 0.8, gridW * 0.9, gridD * 1.1);
-  camera.lookAt(gridW/2 - PLOT_W/2, 0, gridD/2 - PLOT_D/2);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xf0ede6);
 
-  // Renderer
+  const aspect = container.clientWidth / (container.clientHeight || 600);
+  const camera = new THREE.PerspectiveCamera(42, aspect, 0.1, 300);
+
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(window.devicePixelRatio);
-  renderer.setSize(container.clientWidth || 900, container.clientHeight || 560);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(container.clientWidth || 900, container.clientHeight || 600);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   container.appendChild(renderer.domElement);
 
-  // Lights
-  const ambient = new THREE.AmbientLight(0xffffff, 0.7);
-  scene.add(ambient);
-  const sun = new THREE.DirectionalLight(0xfff5e0, 1.2);
-  sun.position.set(20, 30, 20);
+  // ── LIGHTS ────────────────────────────────────────────────────
+  scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+  const sun = new THREE.DirectionalLight(0xfff8e7, 1.3);
+  sun.position.set(25, 40, 15);
   sun.castShadow = true;
-  sun.shadow.mapSize.width = 2048;
-  sun.shadow.mapSize.height = 2048;
+  sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.near = 0.5;
-  sun.shadow.camera.far = 150;
-  sun.shadow.camera.left = -40;
-  sun.shadow.camera.right = 40;
-  sun.shadow.camera.top = 40;
-  sun.shadow.camera.bottom = -40;
+  sun.shadow.camera.far = 200;
+  sun.shadow.camera.left = -50; sun.shadow.camera.right = 50;
+  sun.shadow.camera.top  =  50; sun.shadow.camera.bottom = -50;
   scene.add(sun);
-  const fill = new THREE.DirectionalLight(0xe0f0ff, 0.4);
-  fill.position.set(-10, 10, -10);
+  const fill = new THREE.DirectionalLight(0xd6eaff, 0.35);
+  fill.position.set(-15, 12, -8);
   scene.add(fill);
 
-  // Ground plane
-  const groundGeo = new THREE.PlaneGeometry(gridW + 8, gridD + 8);
-  const groundMat = new THREE.MeshLambertMaterial({ color: 0xe8e4dc });
-  const ground = new THREE.Mesh(groundGeo, groundMat);
-  ground.rotation.x = -Math.PI/2;
-  ground.position.set(gridW/2 - PLOT_W/2, -0.01, gridD/2 - PLOT_D/2);
+  // ── GROUND ────────────────────────────────────────────────────
+  const gGeo = new THREE.PlaneGeometry(gridW + 12, gridD + 12);
+  const gMat = new THREE.MeshLambertMaterial({ color: 0xddd8ce });
+  const ground = new THREE.Mesh(gGeo, gMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.set(gridW/2 - PLOT_W/2, -0.02, gridD/2 - PLOT_D/2);
   ground.receiveShadow = true;
   scene.add(ground);
 
-  // Road strips between rows (every 5 rows add a road)
-  const roadMat = new THREE.MeshLambertMaterial({ color: 0xc8bfb0 });
-  for (let row = 4; row < ROWS; row += 5) {
-    const ry = row * (PLOT_D + GAP) + PLOT_D/2 + GAP/2;
-    const roadGeo = new THREE.PlaneGeometry(gridW + 4, ROAD_W);
+  // ── ROADS (between rows) ──────────────────────────────────────
+  const roadMat = new THREE.MeshLambertMaterial({ color: 0xbbb6ae });
+  for (let r = 0; r < ROWS - 1; r++) {
+    const rz = rowZ(r) + PLOT_D + GAP_Z / 2 + ROAD_Z / 2;
+    const roadGeo = new THREE.PlaneGeometry(gridW + 4, ROAD_Z);
     const road = new THREE.Mesh(roadGeo, roadMat);
-    road.rotation.x = -Math.PI/2;
-    road.position.set(gridW/2 - PLOT_W/2, 0, ry);
+    road.rotation.x = -Math.PI / 2;
+    road.position.set(gridW/2 - PLOT_W/2, 0, rz);
     road.receiveShadow = true;
     scene.add(road);
+    // Road lane markings
+    const laneGeo = new THREE.PlaneGeometry(gridW + 2, 0.08);
+    const laneMat = new THREE.MeshLambertMaterial({ color: 0xfff8e0 });
+    const lane = new THREE.Mesh(laneGeo, laneMat);
+    lane.rotation.x = -Math.PI / 2;
+    lane.position.set(gridW/2 - PLOT_W/2, 0.005, rz);
+    scene.add(lane);
   }
 
-  // Plot meshes
+  // ── PLOT BOXES ────────────────────────────────────────────────
   const plotMeshes = [];
-  const plotHeights = {};
-  const PLOT_H = 0.35;
+  const spriteGroup = new THREE.Group();
+  scene.add(spriteGroup);
 
-  for (let i = 1; i <= totalPlots; i++) {
-    const pd  = plotData[i] || { status: 'available', plot_no: i };
+  PLOT_LAYOUT.forEach(([pn, col, row]) => {
+    const pd  = plotData[pn] || { status: 'available', plot_no: pn };
     const cfg = PLOT_STATUS[pd.status] || PLOT_STATUS.available;
-    const col = (i-1) % COLS;
-    const row = Math.floor((i-1) / COLS);
-    const x   = col * (PLOT_W + GAP);
-    const z   = row * (PLOT_D + GAP);
 
-    // Height based on status (completed = tallest)
-    const h = pd.status === 'completed' ? PLOT_H * 2.5
-            : pd.status === 'booked'    ? PLOT_H * 1.8
-            : pd.status === 'sanction'  ? PLOT_H * 2.0
-            : pd.status === 'prev'      ? PLOT_H * 1.5
-            : pd.status === 'phase2'    ? PLOT_H * 1.2
-            : PLOT_H; // available = short
+    const x = colX(col);
+    const z = rowZ(row);
 
-    plotHeights[i] = h;
+    // Height encodes status
+    const h = pd.status === 'completed' ? 0.9
+            : pd.status === 'booked'    ? 0.65
+            : pd.status === 'sanction'  ? 0.75
+            : pd.status === 'prev'      ? 0.55
+            : pd.status === 'phase2'    ? 0.45
+            : 0.25; // available = flat
 
-    // Box geometry
-    const geo = new THREE.BoxGeometry(PLOT_W - 0.08, h, PLOT_D - 0.08);
-    const topColor   = new THREE.Color(cfg.top3d || cfg.bg);
-    const sideColor  = new THREE.Color(cfg.side3d || cfg.border);
+    const geo  = new THREE.BoxGeometry(PLOT_W - 0.1, h, PLOT_D - 0.1);
+    const topC   = new THREE.Color(cfg.top3d  || cfg.bg);
+    const sideC  = new THREE.Color(cfg.side3d || cfg.border);
 
-    // Multi-material: top face bright, sides darker
-    const materials = [
-      new THREE.MeshLambertMaterial({ color: sideColor }),  // +x
-      new THREE.MeshLambertMaterial({ color: sideColor }),  // -x
-      new THREE.MeshLambertMaterial({ color: topColor  }),  // +y (top)
-      new THREE.MeshLambertMaterial({ color: sideColor }),  // -y (bottom)
-      new THREE.MeshLambertMaterial({ color: sideColor }),  // +z
-      new THREE.MeshLambertMaterial({ color: sideColor }),  // -z
+    const mats = [
+      new THREE.MeshLambertMaterial({ color: sideC }),
+      new THREE.MeshLambertMaterial({ color: sideC }),
+      new THREE.MeshLambertMaterial({ color: topC  }),
+      new THREE.MeshLambertMaterial({ color: sideC }),
+      new THREE.MeshLambertMaterial({ color: sideC }),
+      new THREE.MeshLambertMaterial({ color: sideC }),
     ];
 
-    const mesh = new THREE.Mesh(geo, materials);
+    const mesh = new THREE.Mesh(geo, mats);
     mesh.position.set(x, h/2, z);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.userData = { plotNo: i, data: pd, origY: h/2, col, row, h };
+    mesh.userData = { plotNo: pn, data: pd, baseY: h/2, h };
     scene.add(mesh);
     plotMeshes.push(mesh);
 
-    // Plot number label (sprite)
-    const canvas2d = document.createElement('canvas');
-    canvas2d.width = 128; canvas2d.height = 64;
-    const ctx = canvas2d.getContext('2d');
-    ctx.clearRect(0,0,128,64);
-    ctx.font = 'bold 36px Arial';
+    // Plot number label sprite
+    const cv = document.createElement('canvas');
+    cv.width = 128; cv.height = 80;
+    const ctx = cv.getContext('2d');
+    ctx.font = 'bold 42px Arial';
     ctx.fillStyle = cfg.text || '#374151';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(String(i), 64, 32);
-    const tex = new THREE.CanvasTexture(canvas2d);
-    const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
-    const sprite = new THREE.Sprite(spriteMat);
-    sprite.scale.set(0.9, 0.45, 1);
-    sprite.position.set(x, h + 0.35, z);
-    scene.add(sprite);
-  }
-
-  // Raycaster for hover
-  const raycaster = new THREE.Raycaster();
-  const mouse = new THREE.Vector2();
-  let hoveredMesh = null;
-  let hoveredOrig = null;
-
-  const tooltip = document.createElement('div');
-  tooltip.style.cssText = 'position:absolute;display:none;background:white;border-radius:10px;padding:12px 16px;box-shadow:0 8px 32px rgba(0,0,0,0.18);border:1px solid #e2e8f0;font-family:Outfit,sans-serif;font-size:13px;min-width:200px;pointer-events:none;z-index:999;';
-  container.style.position = 'relative';
-  container.appendChild(tooltip);
-
-  renderer.domElement.addEventListener('mousemove', e => {
-    const rect = renderer.domElement.getBoundingClientRect();
-    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObjects(plotMeshes);
-
-    if (hits.length > 0) {
-      const hit = hits[0].object;
-      if (hit !== hoveredMesh) {
-        // Restore previous
-        if (hoveredMesh && hoveredOrig !== null) {
-          hoveredMesh.position.y = hoveredOrig;
-        }
-        hoveredMesh = hit;
-        hoveredOrig = hit.position.y;
-        hit.position.y = hoveredOrig + 0.4;
-      }
-      // Show tooltip
-      const pd = hit.userData.data;
-      const cfg = PLOT_STATUS[pd.status] || PLOT_STATUS.available;
-      const fmt = n => n ? '₹' + (+n).toLocaleString('en-IN') : '—';
-      tooltip.style.display = 'block';
-      tooltip.style.left = (e.clientX - rect.left + 16) + 'px';
-      tooltip.style.top  = (e.clientY - rect.top  - 10) + 'px';
-      tooltip.innerHTML = `
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px;padding-bottom:8px;border-bottom:1px solid #f1f5f9">
-          <div style="width:10px;height:10px;border-radius:50%;background:${cfg.color};flex-shrink:0"></div>
-          <div style="font-weight:700;font-size:14px">Plot ${pd.plot_no}</div>
-          <div style="margin-left:auto;font-size:11px;padding:2px 8px;border-radius:10px;background:${cfg.bg};color:${cfg.text};font-weight:600;border:1px solid ${cfg.border}">${cfg.label}</div>
-        </div>
-        ${pd.client_name ? `<div style="margin-bottom:5px"><span style="color:#94a3b8;font-size:11px">CLIENT</span><br><span style="font-weight:600">${pd.client_name}</span></div>` : '<div style="color:#94a3b8;font-size:12px;margin-bottom:5px">Available for booking</div>'}
-        ${pd.contact ? `<div style="margin-bottom:5px;font-size:12px;color:#64748b">📞 ${pd.contact}</div>` : ''}
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">
-          ${pd.plot_size ? `<div><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Area</div><div style="font-weight:600;font-size:12px">${pd.plot_size} sqft</div></div>` : ''}
-          ${pd.agreement_value ? `<div><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Value</div><div style="font-weight:600;font-size:12px">${fmt(pd.agreement_value)}</div></div>` : ''}
-        </div>
-        <div style="margin-top:8px;font-size:11px;color:#94a3b8;text-align:right">Click to view full details →</div>`;
-      renderer.domElement.style.cursor = 'pointer';
-    } else {
-      if (hoveredMesh && hoveredOrig !== null) {
-        hoveredMesh.position.y = hoveredOrig;
-        hoveredMesh = null; hoveredOrig = null;
-      }
-      tooltip.style.display = 'none';
-      renderer.domElement.style.cursor = 'grab';
-    }
+    ctx.fillText(String(pn), 64, 40);
+    const tex = new THREE.CanvasTexture(cv);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+    sp.scale.set(1.1, 0.7, 1);
+    sp.position.set(x, h + 0.5, z);
+    spriteGroup.add(sp);
   });
 
-  renderer.domElement.addEventListener('mouseleave', () => {
-    tooltip.style.display = 'none';
-    if (hoveredMesh && hoveredOrig !== null) {
-      hoveredMesh.position.y = hoveredOrig;
-      hoveredMesh = null; hoveredOrig = null;
-    }
-  });
-
-  // Click to open detail modal
-  renderer.domElement.addEventListener('click', e => {
-    const rect = renderer.domElement.getBoundingClientRect();
-    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObjects(plotMeshes);
-    if (hits.length > 0) {
-      const pd = hits[0].object.userData.data;
-      const bk = S.bookings.find(b => parseInt(b.plot_no) === pd.plot_no);
-      const pv = S.prev.find(x => parseInt(x.plot_no) === pd.plot_no);
-      openPlotDetail(pd.plot_no, pd.status, bk, pv);
-    }
-  });
-
-  // Orbit controls (manual — no OrbitControls import needed)
-  let isDragging = false, lastX = 0, lastY = 0;
-  let theta = 0.6, phi = 0.9, radius = Math.max(gridW, gridD) * 1.4;
+  // ── CAMERA ORBIT ──────────────────────────────────────────────
   const center = new THREE.Vector3(gridW/2 - PLOT_W/2, 0, gridD/2 - PLOT_D/2);
+  let theta = 0.55, phi = 0.85;
+  let radius = Math.max(gridW, gridD) * 1.5;
+  let isDragging = false, lastX = 0, lastY = 0;
 
   function updateCamera() {
-    camera.position.x = center.x + radius * Math.sin(phi) * Math.sin(theta);
-    camera.position.y = center.y + radius * Math.cos(phi);
-    camera.position.z = center.z + radius * Math.sin(phi) * Math.cos(theta);
+    camera.position.set(
+      center.x + radius * Math.sin(phi) * Math.sin(theta),
+      center.y + radius * Math.cos(phi),
+      center.z + radius * Math.sin(phi) * Math.cos(theta)
+    );
     camera.lookAt(center);
   }
   updateCamera();
 
-  renderer.domElement.addEventListener('mousedown', e => {
-    isDragging = true; lastX = e.clientX; lastY = e.clientY;
-    renderer.domElement.style.cursor = 'grabbing';
-  });
-  window.addEventListener('mouseup', () => {
-    isDragging = false;
-    renderer.domElement.style.cursor = 'grab';
-  });
+  const dom = renderer.domElement;
+  dom.style.cursor = 'grab';
+
+  dom.addEventListener('mousedown', e => { isDragging=true; lastX=e.clientX; lastY=e.clientY; dom.style.cursor='grabbing'; });
+  window.addEventListener('mouseup', () => { isDragging=false; dom.style.cursor='grab'; });
   window.addEventListener('mousemove', e => {
     if (!isDragging) return;
-    const dx = (e.clientX - lastX) * 0.008;
-    const dy = (e.clientY - lastY) * 0.008;
-    theta -= dx;
-    phi = Math.max(0.2, Math.min(1.4, phi + dy));
-    lastX = e.clientX; lastY = e.clientY;
+    theta -= (e.clientX-lastX)*0.007;
+    phi    = Math.max(0.18, Math.min(1.45, phi+(e.clientY-lastY)*0.007));
+    lastX=e.clientX; lastY=e.clientY;
     updateCamera();
   });
-  renderer.domElement.addEventListener('wheel', e => {
+  dom.addEventListener('wheel', e => {
     e.preventDefault();
-    radius = Math.max(5, Math.min(60, radius + e.deltaY * 0.04));
+    radius = Math.max(6, Math.min(80, radius+e.deltaY*0.05));
     updateCamera();
-  }, { passive: false });
+  }, { passive:false });
 
-  // Touch support
-  let lastTouch = null, lastPinchDist = 0;
-  renderer.domElement.addEventListener('touchstart', e => {
-    if (e.touches.length === 1) { lastTouch = e.touches[0]; isDragging = true; }
-    if (e.touches.length === 2) { const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY; lastPinchDist=Math.sqrt(dx*dx+dy*dy); }
-  });
-  renderer.domElement.addEventListener('touchmove', e => {
+  // Touch
+  let lt=null, lpd=0;
+  dom.addEventListener('touchstart', e => {
+    if(e.touches.length===1){lt=e.touches[0];isDragging=true;}
+    if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;lpd=Math.sqrt(dx*dx+dy*dy);}
+  },{passive:true});
+  dom.addEventListener('touchmove', e => {
     e.preventDefault();
-    if (e.touches.length === 1 && isDragging && lastTouch) {
-      const dx = (e.touches[0].clientX - lastTouch.clientX) * 0.01;
-      const dy = (e.touches[0].clientY - lastTouch.clientY) * 0.01;
-      theta -= dx; phi = Math.max(0.2, Math.min(1.4, phi + dy));
-      lastTouch = e.touches[0]; updateCamera();
+    if(e.touches.length===1&&lt){
+      theta-=(e.touches[0].clientX-lt.clientX)*0.009;
+      phi=Math.max(0.18,Math.min(1.45,phi+(e.touches[0].clientY-lt.clientY)*0.009));
+      lt=e.touches[0]; updateCamera();
     }
-    if (e.touches.length === 2) {
-      const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY;
+    if(e.touches.length===2){
+      const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;
       const d=Math.sqrt(dx*dx+dy*dy);
-      radius = Math.max(5, Math.min(60, radius - (d-lastPinchDist)*0.05));
-      lastPinchDist=d; updateCamera();
+      radius=Math.max(6,Math.min(80,radius-(d-lpd)*0.06));
+      lpd=d; updateCamera();
     }
-  }, {passive:false});
-  renderer.domElement.addEventListener('touchend', () => { isDragging=false; lastTouch=null; });
+  },{passive:false});
+  dom.addEventListener('touchend',()=>{isDragging=false;lt=null;});
 
-  // Resize handler
+  // ── HOVER TOOLTIP ─────────────────────────────────────────────
+  const raycaster = new THREE.Raycaster();
+  const mouse     = new THREE.Vector2();
+  let hoveredMesh = null;
+
+  const tip = document.createElement('div');
+  tip.style.cssText = [
+    'position:absolute','display:none','z-index:999','pointer-events:none',
+    'background:#fff','border-radius:12px','padding:14px 18px',
+    'box-shadow:0 8px 32px rgba(0,0,0,.15)','border:1px solid #e2e8f0',
+    'font-family:Outfit,sans-serif','min-width:210px','max-width:280px',
+  ].join(';');
+  container.style.position = 'relative';
+  container.appendChild(tip);
+
+  dom.addEventListener('mousemove', e => {
+    if (isDragging) { tip.style.display='none'; return; }
+    const rect = dom.getBoundingClientRect();
+    mouse.x = ((e.clientX-rect.left)/rect.width)*2-1;
+    mouse.y = -((e.clientY-rect.top)/rect.height)*2+1;
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(plotMeshes);
+
+    if (hits.length) {
+      const mesh = hits[0].object;
+      // Lift on hover
+      if (mesh !== hoveredMesh) {
+        if (hoveredMesh) hoveredMesh.position.y = hoveredMesh.userData.baseY;
+        hoveredMesh = mesh;
+        mesh.position.y = mesh.userData.baseY + 0.3;
+        dom.style.cursor = 'pointer';
+      }
+      const pd  = mesh.userData.data;
+      const cfg = PLOT_STATUS[pd.status] || PLOT_STATUS.available;
+      const fmt = n => n ? '₹'+Number(n).toLocaleString('en-IN') : '—';
+      tip.style.display = 'block';
+      tip.style.left = (e.clientX-rect.left+18)+'px';
+      tip.style.top  = (e.clientY-rect.top -10)+'px';
+      tip.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:9px;border-bottom:1px solid #f1f5f9">
+          <div style="width:11px;height:11px;border-radius:50%;background:${cfg.color};flex-shrink:0;box-shadow:0 0 0 2px ${cfg.border}40"></div>
+          <span style="font-size:15px;font-weight:700">Plot ${pd.plot_no}</span>
+          <span style="margin-left:auto;font-size:10px;padding:2px 9px;border-radius:10px;background:${cfg.bg};color:${cfg.text};font-weight:700;border:1px solid ${cfg.border}">${cfg.label}</span>
+        </div>
+        ${pd.client_name
+          ? `<div style="margin-bottom:7px"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Client</div>
+             <div style="font-size:13px;font-weight:600;margin-top:2px">${pd.client_name}</div>
+             ${pd.contact?`<div style="font-size:12px;color:#64748b;margin-top:1px">📞 ${pd.contact}</div>`:''}</div>`
+          : `<div style="color:#94a3b8;font-size:12px;margin-bottom:7px;font-style:italic">Available for booking</div>`}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          ${pd.plot_size?`<div><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Area</div><div style="font-size:13px;font-weight:700;margin-top:2px">${pd.plot_size} sqft</div></div>`:''}
+          ${pd.agreement_value?`<div><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Value</div><div style="font-size:13px;font-weight:700;margin-top:2px">${fmt(pd.agreement_value)}</div></div>`:''}
+        </div>
+        <div style="margin-top:9px;font-size:10px;color:#94a3b8;text-align:center">Click to view full details</div>`;
+    } else {
+      if (hoveredMesh) { hoveredMesh.position.y = hoveredMesh.userData.baseY; hoveredMesh = null; dom.style.cursor='grab'; }
+      tip.style.display = 'none';
+    }
+  });
+
+  dom.addEventListener('mouseleave', () => {
+    tip.style.display='none';
+    if(hoveredMesh){hoveredMesh.position.y=hoveredMesh.userData.baseY;hoveredMesh=null;}
+  });
+
+  // Click → open detail modal
+  dom.addEventListener('click', e => {
+    if (Math.abs(e.movementX)+Math.abs(e.movementY) > 5) return;
+    const rect=dom.getBoundingClientRect();
+    mouse.x=((e.clientX-rect.left)/rect.width)*2-1;
+    mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(plotMeshes);
+    if (hits.length) {
+      const pd=hits[0].object.userData.data;
+      const bk=S.bookings.find(b=>parseInt(b.plot_no)===pd.plot_no);
+      const pv=S.prev.find(x=>parseInt(x.plot_no)===pd.plot_no);
+      openPlotDetail(pd.plot_no, pd.status, bk, pv);
+    }
+  });
+
+  // ── RESIZE ────────────────────────────────────────────────────
   const ro = new ResizeObserver(() => {
-    const w = container.clientWidth, h = container.clientHeight || 560;
+    const w=container.clientWidth, h=container.clientHeight||600;
     renderer.setSize(w, h);
     camera.aspect = w/h;
     camera.updateProjectionMatrix();
   });
   ro.observe(container);
 
-  // Animation loop
+  // ── ANIMATE ───────────────────────────────────────────────────
   let animId;
-  function animate() {
-    animId = requestAnimationFrame(animate);
-    renderer.render(scene, camera);
-  }
+  const animate = () => { animId=requestAnimationFrame(animate); renderer.render(scene,camera); };
   animate();
 
-  // Cleanup when navigating away
   container._cleanup = () => {
     cancelAnimationFrame(animId);
     ro.disconnect();
     renderer.dispose();
-    scene.clear();
+    plotMeshes.forEach(m => { m.geometry.dispose(); m.material.forEach?.(mt=>mt.dispose()); });
+    window.removeEventListener('mouseup',()=>{});
+    window.removeEventListener('mousemove',()=>{});
   };
 }
+
 
 function openPlotFilter() { openM('plotFilterModal'); }
 function applyPlotFilter() {

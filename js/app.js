@@ -1774,8 +1774,8 @@ function init3DPlotMap(container, plotData) {
   sun.position.set(30, 50, 20);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  const sc = sun.shadow.camera;
-  sc.left=-60; sc.right=60; sc.top=60; sc.bottom=-60; sc.near=0.5; sc.far=200;
+  const shadowCam = sun.shadow.camera;
+  shadowCam.left=-60; shadowCam.right=60; shadowCam.top=60; shadowCam.bottom=-60; shadowCam.near=0.5; shadowCam.far=200;
   scene.add(sun);
   scene.add(Object.assign(new THREE.DirectionalLight(0xcce8ff, 0.3), {position: new THREE.Vector3(-20,15,-10)}));
 

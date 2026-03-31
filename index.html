@@ -133,11 +133,36 @@
     <div class="page" id="p-sa-audit">
       <div class="ph">
         <div><h1>Platform Audit Log</h1><p>Every action by every user across all projects</p></div>
-        <div class="ph-r"><button class="btn btn-outline btn-sm" onclick="renderSAAudit()">↻ Refresh</button></div>
+        <div class="ph-r">
+          <button class="btn btn-outline btn-sm" onclick="renderSAAudit()">↻ Refresh</button>
+          <button class="btn btn-outline btn-sm" onclick="dlAuditCSV('sa')">⬇ CSV</button>
+        </div>
       </div>
       <div class="card">
-        <div class="card-body" id="saAuditList" style="max-height:680px;overflow-y:auto">
-          <div class="lc"><div class="spin spin-dk"></div></div>
+        <div class="frow">
+          <input type="text" id="sa-audit-search" placeholder="🔍 Name, record…" oninput="filterSAAudit()" style="width:200px">
+          <select id="sa-audit-role" onchange="filterSAAudit()">
+            <option value="">All Roles</option>
+            <option value="sales">Sales</option>
+            <option value="admin">Admin</option>
+            <option value="superadmin">Super Admin</option>
+          </select>
+          <select id="sa-audit-action" onchange="filterSAAudit()">
+            <option value="">All Actions</option>
+            <option value="create">Create</option>
+            <option value="update">Update</option>
+            <option value="delete">Delete</option>
+            <option value="cancel">Cancel</option>
+            <option value="import">Import</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="clearSAAuditFilters()">✕ Clear</button>
+          <span class="fcount" id="sa-audit-cnt"></span>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Time</th><th>Project</th><th>User</th><th>Role</th><th>Action</th><th>Type</th><th>Record</th></tr></thead>
+            <tbody id="sa-audit-body"><tr><td colspan="7"><div class="lc"><div class="spin spin-dk"></div></div></td></tr></tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -220,11 +245,36 @@
     <div class="page" id="p-sa-audit">
       <div class="ph">
         <div><h1>Platform Audit Log</h1><p>Every action by every user across all projects</p></div>
-        <div class="ph-r"><button class="btn btn-outline btn-sm" onclick="renderSAAudit()">↻ Refresh</button></div>
+        <div class="ph-r">
+          <button class="btn btn-outline btn-sm" onclick="renderSAAudit()">↻ Refresh</button>
+          <button class="btn btn-outline btn-sm" onclick="dlAuditCSV('sa')">⬇ CSV</button>
+        </div>
       </div>
       <div class="card">
-        <div class="card-body" id="saAuditList" style="max-height:680px;overflow-y:auto">
-          <div class="lc"><div class="spin spin-dk"></div></div>
+        <div class="frow">
+          <input type="text" id="sa-audit-search" placeholder="🔍 Name, record…" oninput="filterSAAudit()" style="width:200px">
+          <select id="sa-audit-role" onchange="filterSAAudit()">
+            <option value="">All Roles</option>
+            <option value="sales">Sales</option>
+            <option value="admin">Admin</option>
+            <option value="superadmin">Super Admin</option>
+          </select>
+          <select id="sa-audit-action" onchange="filterSAAudit()">
+            <option value="">All Actions</option>
+            <option value="create">Create</option>
+            <option value="update">Update</option>
+            <option value="delete">Delete</option>
+            <option value="cancel">Cancel</option>
+            <option value="import">Import</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="clearSAAuditFilters()">✕ Clear</button>
+          <span class="fcount" id="sa-audit-cnt"></span>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Time</th><th>Project</th><th>User</th><th>Role</th><th>Action</th><th>Type</th><th>Record</th></tr></thead>
+            <tbody id="sa-audit-body"><tr><td colspan="7"><div class="lc"><div class="spin spin-dk"></div></div></td></tr></tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -516,12 +566,15 @@ notes</code>
     <!-- AUDIT LOG -->
     <div class="page" id="p-audit">
       <div class="ph">
-        <div><h1>Audit Log</h1><p>Complete trail of every action — who did what and when</p></div>
-        <div class="ph-r"><button class="btn btn-outline btn-sm" onclick="dlAuditCSV()">⬇ Export CSV</button></div>
+        <div><h1>Audit Log</h1><p>Full trail of every action — who did what and when</p></div>
+        <div class="ph-r">
+          <button class="btn btn-outline btn-sm" onclick="renderProjectAudit()">↻ Refresh</button>
+          <button class="btn btn-outline btn-sm" onclick="dlAuditCSV()">⬇ CSV</button>
+        </div>
       </div>
       <div class="card">
         <div class="frow">
-          <input type="text" id="audit-search" placeholder="🔍 Name, detail…" oninput="filterAudit()" style="width:200px">
+          <input type="text" id="audit-search" placeholder="🔍 Name, record…" oninput="filterAudit()" style="width:200px">
           <select id="audit-role" onchange="filterAudit()">
             <option value="">All Roles</option>
             <option value="sales">Sales</option>
@@ -530,10 +583,11 @@ notes</code>
           </select>
           <select id="audit-action" onchange="filterAudit()">
             <option value="">All Actions</option>
-            <option value="CREATE">Create</option>
-            <option value="UPDATE">Update</option>
-            <option value="DELETE">Delete</option>
-            <option value="IMPORT">Import</option>
+            <option value="create">Create</option>
+            <option value="update">Update</option>
+            <option value="delete">Delete</option>
+            <option value="cancel">Cancel</option>
+            <option value="import">Import</option>
           </select>
           <select id="audit-entity" onchange="filterAudit()">
             <option value="">All Types</option>
@@ -546,57 +600,9 @@ notes</code>
         </div>
         <div class="tw">
           <table>
-            <thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Type</th><th>Record</th><th>Detail</th></tr></thead>
-            <tbody id="audit-body"><tr><td colspan="7"><div class="lc"><div class="spin spin-dk"></div></div></td></tr></tbody>
+            <thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Type</th><th>Record</th></tr></thead>
+            <tbody id="audit-body"><tr><td colspan="6"><div class="lc"><div class="spin spin-dk"></div></div></td></tr></tbody>
           </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- AUDIT LOG (project level) -->
-    <div class="page" id="p-audit">
-      <div class="ph">
-        <div><h1>Audit Log</h1><p>Full trail of every action in this project</p></div>
-        <div class="ph-r">
-          <button class="btn btn-outline btn-sm" onclick="renderProjectAudit()">↻ Refresh</button>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-body" id="auditList" style="max-height:680px;overflow-y:auto">
-          <div class="lc"><div class="spin spin-dk"></div></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- SETTINGS -->
-    <div class="page" id="p-settings">
-      <div class="ph"><div><h1>Project Settings</h1><p>Details, users, custom fields</p></div></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
-        <div>
-          <div class="card" style="margin-bottom:18px">
-            <div class="card-hd"><span class="card-hd-title">Project Details</span></div>
-            <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
-              <div class="fg"><label>Project Name</label><input type="text" id="set-name"></div>
-              <div class="fg"><label>Location</label><input type="text" id="set-loc"></div>
-              <div class="fg"><label>Developer</label><input type="text" id="set-dev"></div>
-              <div class="fg"><label>RERA Number</label><input type="text" id="set-rera"></div>
-              <div class="fg"><label>Total Plots</label><input type="number" id="set-plots"></div>
-              <div class="form3">
-                <div class="fg"><label>Infra (₹/sqft)</label><input type="number" id="set-infra"></div>
-                <div class="fg"><label>Legal (₹)</label><input type="number" id="set-legal"></div>
-                <div class="fg"><label>SDR Rate (%)</label><input type="number" id="set-sdr" step="0.1"></div>
-              </div>
-              <button class="btn btn-primary" onclick="saveSettings()">Save Changes</button>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-hd"><span class="card-hd-title">Custom Fields</span><button class="btn btn-gold btn-sm" onclick="openCFModal()">＋ Add Field</button></div>
-            <div class="card-body"><p style="font-size:12px;color:var(--inkf);margin-bottom:12px">Project-specific fields in Booking or Cheque forms.</p><div id="cfList"></div></div>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-hd"><span class="card-hd-title">Project Users</span><button class="btn btn-gold btn-sm" onclick="openUserModal(S.curProj?.id)">＋ Add User</button></div>
-          <div class="users-list" id="projUsers"></div>
         </div>
       </div>
     </div>

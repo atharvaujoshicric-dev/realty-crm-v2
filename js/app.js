@@ -261,7 +261,7 @@ function buildNav(role) {
 
 async function navigate(pid) {
   goPage(pid);
-  const isSA = pid.startsWith('p-sa-') || pid === 'p-audit';
+  const isSA = pid.startsWith('p-sa-');
   if (!isSA && S.curProj) await loadProjData();
   const map = {
     'p-sa-proj':   renderSAProj,
@@ -1068,9 +1068,11 @@ async function deleteCF(id){
 
 // ── BOOKING MODAL ────────────────────────────────────────────
 function openBkModal(bk) {
+  // bk can be a full booking object OR {plot_no:'45'} from plot map
+  const isPartial = bk && !bk.id;
   S.editBkId = bk?.id || null;
-  el('bkMTitle').textContent = bk ? 'Edit Booking' : 'New Booking';
-  el('bkMSub').textContent   = bk ? bk.client_name : 'Add a plot booking';
+  el('bkMTitle').textContent = bk?.id ? 'Edit Booking' : 'New Booking';
+  el('bkMSub').textContent   = bk?.id ? (bk.client_name||'') : (bk?.plot_no ? `Plot ${bk.plot_no} — Add booking` : 'Add a plot booking');
   const p=S.curProj;
   const fields = {
     'f-serial':'serial_no','f-date':'booking_date','f-name':'client_name','f-contact':'contact',
@@ -1086,7 +1088,8 @@ function openBkModal(bk) {
   const defaults = {'f-infra':p?.infra_rate||100,'f-legal':p?.legal_charges||25000,'f-maint':p?.maintenance||0,'f-status':'File Given'};
   Object.entries(fields).forEach(([fid,col]) => {
     const e=el(fid); if(!e) return;
-    e.value = bk ? (bk[col]??'') : (defaults[fid]??'');
+    // For full booking: use booking value. For partial {plot_no}: use that. For new: use defaults.
+    e.value = bk ? (bk[col]??defaults[fid]??'') : (defaults[fid]??'');
   });
   setF('f-basic',''); setF('f-bi','');
   if(bk) calcBk();
@@ -1322,501 +1325,157 @@ async function logAudit(action, entity, entityId, entityLabel, detail, changes=n
 }
 
 // ── AUDIT LOG ────────────────────────────────────────────────
+// Raw audit data cache for filtering
+let _auditData = [];
+let _saAuditData = [];
+
 async function renderProjectAudit() {
-  const wrap = el('auditList');
-  if (!wrap) return;
-  wrap.innerHTML = '<div class="lc"><div class="spin spin-dk"></div></div>';
-  if (!S.curProj) { wrap.innerHTML = '<div class="empty"><p>No project selected</p></div>'; return; }
+  const tbody = el('audit-body');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6"><div class="lc"><div class="spin spin-dk"></div></div></td></tr>';
+  if (!S.curProj) { tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><p>No project selected</p></div></td></tr>'; return; }
 
   const { data, error } = await sb
     .from('audit_log')
     .select('*')
     .eq('project_id', S.curProj.id)
     .order('created_at', { ascending: false })
-    .limit(300);
+    .limit(500);
 
-  if (error) { wrap.innerHTML = `<div class="empty"><p style="color:var(--rose)">Error: ${esc(error.message)}</p></div>`; return; }
-  wrap.innerHTML = buildAuditHTML(data || []);
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--rose);padding:16px">Error: ${esc(error.message)}</td></tr>`;
+    return;
+  }
+  _auditData = data || [];
+  renderAuditTable(_auditData, 'audit-body', 'audit-cnt', false);
+}
+
+function filterAudit() {
+  const search = (el('audit-search')?.value || '').toLowerCase();
+  const role   = el('audit-role')?.value   || '';
+  const action = el('audit-action')?.value || '';
+  const entity = el('audit-entity')?.value || '';
+  let d = _auditData;
+  if (search) d = d.filter(l => (l.user_name||'').toLowerCase().includes(search) || (l.entity_label||'').toLowerCase().includes(search));
+  if (role)   d = d.filter(l => l.user_role === role);
+  if (action) d = d.filter(l => l.action === action);
+  if (entity) d = d.filter(l => l.entity === entity);
+  renderAuditTable(d, 'audit-body', 'audit-cnt', false);
+}
+
+function clearAuditFilters() {
+  ['audit-search','audit-role','audit-action','audit-entity'].forEach(id => { const e=el(id); if(e) e.value=''; });
+  renderAuditTable(_auditData, 'audit-body', 'audit-cnt', false);
 }
 
 async function renderSAAudit() {
-  const wrap = el('saAuditList');
-  if (!wrap) return;
-  wrap.innerHTML = '<div class="lc"><div class="spin spin-dk"></div></div>';
+  const tbody = el('sa-audit-body');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="7"><div class="lc"><div class="spin spin-dk"></div></div></td></tr>';
 
-  const { data: projs } = await sb.from('projects').select('id,name');
-  const { data, error } = await sb
-    .from('audit_log')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(500);
+  const [{ data: projs }, { data, error }] = await Promise.all([
+    sb.from('projects').select('id,name'),
+    sb.from('audit_log').select('*').order('created_at', { ascending: false }).limit(1000),
+  ]);
 
-  if (error) { wrap.innerHTML = `<div class="empty"><p style="color:var(--rose)">Error: ${esc(error.message)}</p></div>`; return; }
-  if (!data?.length) { wrap.innerHTML = '<div class="empty"><div class="ei">📋</div><h3>No activity yet</h3><p>Actions appear here as users work</p></div>'; return; }
-
-  const projMap = {};
-  (projs||[]).forEach(p => projMap[p.id] = p.name);
-
-  // Group by project
-  const byProj = {};
-  data.forEach(log => {
-    const pname = projMap[log.project_id] || 'Unknown Project';
-    if (!byProj[pname]) byProj[pname] = [];
-    byProj[pname].push(log);
-  });
-
-  wrap.innerHTML = Object.entries(byProj).map(([pname, logs]) =>
-    `<div style="margin-bottom:20px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--gold);padding:8px 0 6px;border-bottom:2px solid var(--goldb);margin-bottom:6px">
-        🏗 ${esc(pname)} <span style="font-weight:400;color:var(--inkf)">(${logs.length} actions)</span>
-      </div>
-      ${buildAuditHTML(logs)}
-    </div>`
-  ).join('');
-}
-
-function buildAuditHTML(logs) {
-  if (!logs.length) return '<div class="empty"><div class="ei">📋</div><h3>No activity yet</h3><p>Actions will appear here</p></div>';
-  const aColor = { create:'var(--sage)', update:'var(--sky)', cancel:'var(--gold)', delete:'var(--rose)', import:'var(--teal)' };
-  const aIcon  = { create:'＋', update:'✏', cancel:'✕', delete:'🗑', import:'📥' };
-  return logs.map(log => {
-    const dt = new Date(log.created_at);
-    const dateStr = dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
-    const timeStr = dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
-    const color = aColor[log.action] || 'var(--inkf)';
-    const icon  = aIcon[log.action]  || '•';
-    const changes = log.changes || {};
-    const changeKeys = Object.keys(changes);
-    const changesHTML = changeKeys.length
-      ? `<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">
-          ${changeKeys.slice(0,6).map(f => {
-            const entry = changes[f];
-            const oldV = entry?.old ?? '';
-            const newV = entry?.new ?? '';
-            return `<span style="font-size:10px;padding:2px 7px;background:var(--paper2);border-radius:4px;border:1px solid var(--border)">
-              <span style="color:var(--inkf)">${esc(f)}:</span>
-              <span style="color:var(--rose)">${esc(String(oldV).substring(0,20))}</span>
-              → <span style="color:var(--sage)">${esc(String(newV).substring(0,20))}</span>
-            </span>`;
-          }).join('')}
-        </div>` : '';
-    return `<div style="display:flex;gap:12px;padding:11px 0;border-bottom:1px solid var(--border)">
-      <div style="width:32px;height:32px;border-radius:50%;background:${color}22;border:1.5px solid ${color};display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;color:${color};font-weight:700">${icon}</div>
-      <div style="flex:1;min-width:0">
-        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
-          <span style="font-weight:600;font-size:13px">${esc(log.user_name)}</span>
-          <span class="role-pill rp-${log.user_role}">${log.user_role}</span>
-          <span style="font-size:12px;background:${color}22;color:${color};padding:1px 8px;border-radius:4px;font-weight:600">${log.action}</span>
-          <span style="font-size:12px;color:var(--inkf)">${log.entity}</span>
-          <span style="font-size:12px;font-weight:500">${esc(log.entity_label||'')}</span>
-        </div>
-        ${changesHTML}
-      </div>
-      <div style="text-align:right;flex-shrink:0;white-space:nowrap">
-        <div style="font-size:11px;font-weight:600;color:var(--inkl)">${dateStr}</div>
-        <div style="font-size:11px;color:var(--inkf)">${timeStr}</div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-// ── EXCEL WORKBOOK IMPORT ────────────────────────────────────
-// Accepts the full SOTR workbook (.xlsx) and imports all sheets at once
-const IMP = { wb: null, projId: '', parsed: {} };
-
-function renderImportPage() {
-  // Always clear and repopulate to prevent duplicates
-  const sel = el('imp-proj');
-  sel.innerHTML = '<option value="">— Select Project —</option>';
-  sb.from('projects').select('id,name').order('name').then(({ data }) => {
-    sel.innerHTML = '<option value="">— Select Project —</option>' +
-      (data||[]).map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
-  });
-  resetImport();
-}
-
-function resetImport() {
-  IMP.wb = null; IMP.projId = ''; IMP.parsed = {};
-  showEl('imp-s1'); hideEl('imp-s2'); hideEl('imp-result');
-  const fi = el('imp-file'); if (fi) fi.value = '';
-  el('imp-fname').textContent = '';
-  el('imp-parse-btn').disabled = true;
-}
-
-function onFileChange(input) {
-  const file = input.files[0]; if (!file) return;
-  el('imp-fname').textContent = '📊 ' + file.name;
-  el('imp-parse-btn').disabled = false;
-}
-
-async function parseFile() {
-  const file   = el('imp-file').files[0];
-  const projId = el('imp-proj').value;
-  if (!file)   { toast('Select a file', 'err'); return; }
-  if (!projId) { toast('Select a project', 'err'); return; }
-  if (typeof XLSX === 'undefined') { toast('Excel library not loaded — refresh page', 'err'); return; }
-
-  IMP.projId = projId;
-  setBtn('imp-parse-btn', true);
-  el('imp-fname').textContent = '⏳ Reading workbook…';
-
-  try {
-    const buf = await file.arrayBuffer();
-    IMP.wb = XLSX.read(buf, { type: 'array', cellDates: true, raw: false });
-  } catch(e) {
-    toast('Could not read file: ' + e.message, 'err');
-    setBtn('imp-parse-btn', false);
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="7" style="color:var(--rose);padding:16px">Error: ${esc(error.message)}</td></tr>`;
     return;
   }
 
-  IMP.parsed = {};
-  const sheets = IMP.wb.SheetNames;
+  const projMap = {};
+  (projs||[]).forEach(p => projMap[p.id] = p.name);
+  _saAuditData = (data||[]).map(l => ({ ...l, _projName: projMap[l.project_id] || '—' }));
+  renderAuditTable(_saAuditData, 'sa-audit-body', 'sa-audit-cnt', true);
+}
 
-  // ── Process BWxSOTR → bookings ──────────────────────────────
-  const bwSheet = sheets.find(s => s.toLowerCase().includes('bwxsotr') || s.toLowerCase().includes('bw'));
-  if (bwSheet) {
-    IMP.parsed.bookings = parseBWxSOTR(IMP.wb.Sheets[bwSheet]);
+function filterSAAudit() {
+  const search = (el('sa-audit-search')?.value || '').toLowerCase();
+  const role   = el('sa-audit-role')?.value   || '';
+  const action = el('sa-audit-action')?.value || '';
+  let d = _saAuditData;
+  if (search) d = d.filter(l => (l.user_name||'').toLowerCase().includes(search) || (l.entity_label||'').toLowerCase().includes(search) || (l._projName||'').toLowerCase().includes(search));
+  if (role)   d = d.filter(l => l.user_role === role);
+  if (action) d = d.filter(l => l.action === action);
+  renderAuditTable(d, 'sa-audit-body', 'sa-audit-cnt', true);
+}
+
+function clearSAAuditFilters() {
+  ['sa-audit-search','sa-audit-role','sa-audit-action'].forEach(id => { const e=el(id); if(e) e.value=''; });
+  renderAuditTable(_saAuditData, 'sa-audit-body', 'sa-audit-cnt', true);
+}
+
+function renderAuditTable(logs, tbodyId, cntId, showProject) {
+  const tbody = el(tbodyId);
+  const cols  = showProject ? 7 : 6;
+  if (!tbody) return;
+  if (el(cntId)) el(cntId).textContent = logs.length + ' records';
+  if (!logs.length) {
+    tbody.innerHTML = `<tr><td colspan="${cols}"><div class="empty"><div class="ei">📋</div><h3>No activity yet</h3><p>Actions appear here as users work</p></div></td></tr>`;
+    return;
   }
+  const aColor = { create:'var(--sage)', update:'var(--sky)', cancel:'var(--gold)', delete:'var(--rose)', import:'var(--teal)', CREATE:'var(--sage)', UPDATE:'var(--sky)', DELETE:'var(--rose)', IMPORT:'var(--teal)' };
+  const aBg    = { create:'#dcfce7',update:'#dbeafe',cancel:'#fef3c7',delete:'#fee2e2',import:'#ccfbf1',CREATE:'#dcfce7',UPDATE:'#dbeafe',DELETE:'#fee2e2',IMPORT:'#ccfbf1' };
 
-  // ── Process Cheque details → cheques ───────────────────────
-  const chqSheet = sheets.find(s => s.toLowerCase().includes('cheque'));
-  if (chqSheet) {
-    IMP.parsed.cheques = parseCheques(IMP.wb.Sheets[chqSheet]);
-  }
-
-  // ── Process Previous Team Bookings → prev_bookings ─────────
-  const prevSheet = sheets.find(s => s.toLowerCase().includes('previous') || s.toLowerCase().includes('prev'));
-  if (prevSheet) {
-    IMP.parsed.prev = parsePrevTeam(IMP.wb.Sheets[prevSheet]);
-  }
-
-  setBtn('imp-parse-btn', false);
-
-  const bkCount  = IMP.parsed.bookings?.length || 0;
-  const chqCount = IMP.parsed.cheques?.length  || 0;
-  const prvCount = IMP.parsed.prev?.length     || 0;
-  const total    = bkCount + chqCount + prvCount;
-
-  if (!total) { toast('No valid data found in workbook', 'err'); return; }
-
-  // Show preview
-  el('imp-summary').innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
-      ${bkCount ? `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--paper);border:1px solid var(--border);border-radius:8px">
-        <span style="font-size:20px">🏡</span>
-        <div style="flex:1"><div style="font-weight:600">Bookings (BWxSOTR)</div><div style="font-size:12px;color:var(--inkf)">Sheet: ${bwSheet}</div></div>
-        <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700">${bkCount}</div>
-        <div style="font-size:12px;color:var(--inkf)">rows</div>
-      </div>` : '<div style="padding:10px 16px;color:var(--rose);font-size:13px;border:1px solid var(--border);border-radius:8px">⚠️ No BWxSOTR sheet found</div>'}
-      ${chqCount ? `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--paper);border:1px solid var(--border);border-radius:8px">
-        <span style="font-size:20px">🧾</span>
-        <div style="flex:1"><div style="font-weight:600">Cheques</div><div style="font-size:12px;color:var(--inkf)">Sheet: ${chqSheet}</div></div>
-        <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700">${chqCount}</div>
-        <div style="font-size:12px;color:var(--inkf)">rows</div>
-      </div>` : '<div style="padding:10px 16px;color:var(--inkf);font-size:13px;border:1px solid var(--border);border-radius:8px">ℹ️ No Cheque details sheet found</div>'}
-      ${prvCount ? `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--paper);border:1px solid var(--border);border-radius:8px">
-        <span style="font-size:20px">📁</span>
-        <div style="flex:1"><div style="font-weight:600">Previous Team Bookings</div><div style="font-size:12px;color:var(--inkf)">Sheet: ${prevSheet}</div></div>
-        <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700">${prvCount}</div>
-        <div style="font-size:12px;color:var(--inkf)">rows</div>
-      </div>` : ''}
-    </div>
-    <div style="padding:12px 16px;background:var(--goldl);border:1px solid var(--goldb);border-radius:8px;display:flex;gap:12px;align-items:center">
-      <span style="font-size:20px">📥</span>
-      <div><strong>Total: ${total} records ready to import</strong><br><span style="font-size:12px;color:var(--inkl)">Existing data will NOT be deleted. Duplicate entries may be created if run twice.</span></div>
-    </div>`;
-
-  el('imp-total').textContent = total;
-  el('imp-confirm').disabled = false;
-  hideEl('imp-s1'); showEl('imp-s2');
+  tbody.innerHTML = logs.map(log => {
+    const dt      = new Date(log.created_at);
+    const dateStr = dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+    const timeStr = dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+    const color   = aColor[log.action]  || 'var(--inkf)';
+    const bg      = aBg[log.action]     || '#f3f4f6';
+    const projCol = showProject ? `<td class="td-dim" style="font-size:11px">${esc(log._projName||'—')}</td>` : '';
+    return `<tr>
+      <td style="white-space:nowrap;font-size:11px">
+        <div style="font-weight:600">${dateStr}</div>
+        <div style="color:var(--inkf)">${timeStr}</div>
+      </td>
+      ${projCol}
+      <td class="td-name" style="font-size:12px">${esc(log.user_name||'—')}</td>
+      <td><span class="role-pill rp-${log.user_role}" style="font-size:10px">${log.user_role||'—'}</span></td>
+      <td><span style="padding:2px 9px;border-radius:12px;font-size:11px;font-weight:700;background:${bg};color:${color}">${(log.action||'').toUpperCase()}</span></td>
+      <td class="td-dim" style="font-size:12px">${log.entity||'—'}</td>
+      <td style="font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(log.entity_label||'—')}</td>
+    </tr>`;
+  }).join('');
 }
 
-// ── SHEET PARSERS ─────────────────────────────────────────────
-
-function sheetToRows(ws) {
-  return XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+// Keep for SA audit HTML (legacy - not used but don't break)
+function buildAuditHTML(logs) {
+  return renderAuditTable ? '' : '';
 }
 
-function cellVal(row, idx) {
-  const v = row[idx];
-  if (v === undefined || v === null) return '';
-  return String(v).replace(/‪|‬/g, '').replace(/ /g, ' ').trim();
-}
-
-function cellNum(row, idx) {
-  const v = cellVal(row, idx);
-  if (!v || v === 'nan') return null;
-  const n = parseFloat(v.replace(/[₹,\s]/g, ''));
-  return isNaN(n) ? null : n;
-}
-
-function cellDate(row, idx) {
-  const v = cellVal(row, idx);
-  if (!v || v === 'nan' || v === 'NaT') return null;
-  // Already YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}/.test(v)) return v.substring(0, 10);
-  // DD.MM.YYYY or DD/MM/YYYY
-  const m = v.match(/^(\d{1,2})[.\/\-](\d{1,2})[.\/\-](\d{2,4})$/);
-  if (m) {
-    const day = m[1].padStart(2,'0'), mon = m[2].padStart(2,'0');
-    const yr  = m[3].length === 2 ? '20' + m[3] : m[3];
-    if (parseInt(mon) > 12 || parseInt(day) > 31) return null;
-    return `${yr}-${mon}-${day}`;
-  }
-  // Excel serial
-  const n = parseFloat(v);
-  if (!isNaN(n) && n > 40000 && n < 60000) {
-    return new Date(Math.round((n - 25569) * 86400000)).toISOString().substring(0, 10);
-  }
-  return null;
-}
-
-function normBank(v) {
-  if (!v) return '';
-  const vl = v.toLowerCase();
-  if (vl.includes('axis'))  return 'Axis';
-  if (vl.includes('hdfc'))  return 'HDFC';
-  if (vl.includes('idbi'))  return 'IDBI';
-  if (vl.includes('icici')) return 'ICICI';
-  if (vl.includes('sbi'))   return 'SBI';
-  if (vl.includes('tata'))  return 'Tata Capital';
-  if (vl === 'self' || vl === '...' || vl === '---') return 'Self';
-  if (vl.includes('phase 2')) return 'Phase 2';
-  return v.trim();
-}
-
-function parseBWxSOTR(ws) {
-  const allRows = sheetToRows(ws);
-  // Row 0 = headers, Row 1 = totals line (skip), Row 2+ = data
-  const rows = allRows.slice(2).filter(r => {
-    const name = cellVal(r, 2);
-    return name && name !== 'nan' && name.trim() !== '';
+function dlAuditCSV(mode) {
+  const data = mode === 'sa' ? _saAuditData : _auditData;
+  if (!data.length) { toast('No audit data to export','err'); return; }
+  const header = mode === 'sa'
+    ? ['Time','Project','User','Role','Action','Type','Record']
+    : ['Time','User','Role','Action','Type','Record'];
+  const rows = data.map(l => {
+    const dt = new Date(l.created_at).toLocaleString('en-IN');
+    const base = [dt, l.user_name||'', l.user_role||'', l.action||'', l.entity||'', l.entity_label||''];
+    return mode === 'sa' ? [dt, l._projName||'', l.user_name||'', l.user_role||'', l.action||'', l.entity||'', l.entity_label||''] : base;
   });
-
-  return rows.map(r => {
-    const agreeRaw = cellVal(r, 18);
-    const disbRaw  = cellVal(r, 34);
-    const agreeL   = agreeRaw.toLowerCase().trim();
-    const disbL    = disbRaw.toLowerCase().trim().replace(/[^a-z]/g,'');
-    const isDisbDone = agreeL === 'done' || disbL === 'done';
-
-    return {
-      serial_no:           cellNum(r, 0) ? parseInt(cellVal(r,0)) : null,
-      booking_date:        cellDate(r, 1),
-      client_name:         cellVal(r, 2),
-      contact:             cellVal(r, 3),
-      plot_no:             cellVal(r, 4),
-      plot_size:           cellNum(r, 5),
-      basic_rate:          cellNum(r, 6),
-      infra:               cellNum(r, 7) ?? 100,
-      agreement_value:     cellNum(r, 10),
-      sdr:                 cellNum(r, 11),
-      sdr_minus:           cellNum(r, 12) ?? 0,
-      maintenance:         cellNum(r, 13) ?? 0,
-      legal_charges:       cellNum(r, 14) ?? 25000,
-      bank_name:           normBank(cellVal(r, 21)),
-      banker_contact:      cellVal(r, 33),
-      loan_status:         agreeL === 'done' ? 'Agreement Completed' : normLoanStatus(agreeRaw),
-      sanction_received:   cellVal(r, 30).toLowerCase().startsWith('y') ? 'Yes' : null,
-      sanction_date:       cellDate(r, 31),
-      sanction_letter:     cellVal(r, 32) || null,
-      sdr_received:        cellNum(r, 28),
-      sdr_received_date:   cellDate(r, 29),
-      disbursement_status: isDisbDone ? 'done' : null,
-      disbursement_date:   cellDate(r, 35),
-      disbursement_remark: (!isDisbDone && disbRaw && disbL !== '') ? disbRaw : '',
-      doc_submitted:       cellVal(r, 37),
-      remark:              cellVal(r, 36),
-    };
-  }).filter(r => r.client_name);
+  const csv = [header,...rows].map(r=>r.map(c=>'"'+String(c||'').replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=`audit_log_${today()}.csv`; a.click();
+  toast('Audit CSV downloaded!');
 }
-
-function parseCheques(ws) {
-  const allRows = sheetToRows(ws);
-  const rows = allRows.slice(1); // skip header row 0
-
-  const result = [];
-  let lastName = '', lastPlot = '';
-
-  rows.forEach(r => {
-    const name   = cellVal(r, 0);
-    const plot   = cellVal(r, 1);
-    const bank   = cellVal(r, 2);
-    const chqno  = cellVal(r, 3);
-    const date   = cellVal(r, 4);
-    const amtRaw = cellVal(r, 5);
-    const remark = cellVal(r, 6);
-
-    // Update running customer name/plot
-    if (name && name !== 'nan') {
-      lastName = name;
-      if (plot && !['infra chrg','infra charge'].includes(plot.toLowerCase()) && plot !== 'nan') {
-        lastPlot = plot;
-      }
-    }
-
-    const amount = parseFloat(amtRaw.replace(/[₹,\s]/g,'')) || 0;
-    const entryType = normEntry(remark);
-
-    // Skip NILL total rows and zero amounts
-    const isTotal = entryType === 'NILL' && !bank && !date;
-    if (isTotal || amount <= 0 || !lastName) return;
-
-    // Normalize date
-    let chequeDate = null;
-    if (date && !['cash recv','rtgs done','nan',''].includes(date.toLowerCase())) {
-      const dm = date.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{2,4})$/);
-      if (dm) {
-        const y = dm[3].length===2?'20'+dm[3]:dm[3];
-        chequeDate = `${y}-${dm[2].padStart(2,'0')}-${dm[1].padStart(2,'0')}`;
-      }
-    }
-
-    result.push({
-      cust_name:   lastName,
-      plot_no:     lastPlot,
-      bank_detail: bank,
-      cheque_no:   chqno,
-      cheque_date: chequeDate,
-      amount:      amount,
-      entry_type:  entryType,
-    });
-  });
-
-  return result;
-}
-
-function parsePrevTeam(ws) {
-  const allRows = sheetToRows(ws);
-  return allRows.slice(1)
-    .filter(r => cellVal(r,0) && cellVal(r,0) !== 'nan')
-    .map(r => ({
-      client_name:     cellVal(r, 0),
-      plot_no:         cellVal(r, 1),
-      plot_size:       cellNum(r, 2),
-      agreement_value: cellNum(r, 3),
-      notes:           '',
-    }));
-}
-
-async function runImport() {
-  const projId = IMP.projId; if (!projId) return;
-  setBtn('imp-confirm', true);
-  showEl('imp-progress'); hideEl('imp-s2');
-
-  let imported = 0, errors = 0;
-
-  const tasks = [
-    { table: 'bookings',     rows: IMP.parsed.bookings || [],  label: 'Bookings' },
-    { table: 'cheques',      rows: IMP.parsed.cheques  || [],  label: 'Cheques'  },
-    { table: 'prev_bookings',rows: IMP.parsed.prev     || [],  label: 'Prev Team'},
-  ];
-
-  for (const task of tasks) {
-    if (!task.rows.length) continue;
-    el('imp-prog-text').textContent = `Importing ${task.label} (${task.rows.length} rows)…`;
-    const CHUNK = 50;
-    for (let i = 0; i < task.rows.length; i += CHUNK) {
-      const chunk = task.rows.slice(i, i+CHUNK).map(r => ({ ...r, project_id: projId }));
-      const { error } = await sb.from(task.table).insert(chunk);
-      if (error) {
-        errors += chunk.length;
-        console.error(task.table, error.message, error.details || '');
-        el('imp-prog-text').textContent = `⚠️ Error: ${error.message}`;
-      } else { imported += chunk.length; }
-      const pct = Math.round(((tasks.indexOf(task) + i/task.rows.length) / tasks.length) * 100);
-      el('imp-prog-bar').style.width = Math.min(pct, 98) + '%';
-    }
-  }
-
-  el('imp-prog-bar').style.width = '100%';
-  await new Promise(r => setTimeout(r, 400));
-  setBtn('imp-confirm', false);
-  hideEl('imp-progress'); showEl('imp-result');
-  el('imp-ok').textContent  = imported;
-  el('imp-err').textContent = errors;
-  if (imported > 0 && S.curProj?.id === projId) await loadProjData();
-  if (imported > 0) await writeLog('import', 'workbook', null, `${imported} records from Excel`);
-  toast(imported > 0 ? `✓ Imported ${imported} records!` : 'No records imported', imported > 0 ? 'ok' : 'err');
-}
-
-
-
-// ── HELPERS & UTILITIES ──────────────────────────────────────
-window.addEventListener('click', e => {
-  if (e.target.classList.contains('overlay')) e.target.classList.remove('on');
-});
-
-function sc(cls,icon,val,label,sub){ return `<div class="sc ${cls}"><div class="sc-blob"></div><div class="sc-icon">${icon}</div><div class="sc-val">${val}</div><div class="sc-label">${label}</div><div class="sc-sub">${sub}</div></div>`; }
-function triplet(items){ return `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px">${items.map(x=>`<div style="text-align:center;padding:12px 7px;background:${x.bg};border-radius:9px"><div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700;color:${x.c}">${x.v}</div><div style="font-size:9.5px;text-transform:uppercase;letter-spacing:1px;color:var(--inkf);margin-top:3px">${x.l}</div></div>`).join('')}</div>`; }
-function statusBadge(s){ const m={'Agreement Completed':'b-green','Disbursement Done':'b-green','Sanction Received':'b-blue','File Given':'b-gold','Under Process':'b-teal','Cancelled':'b-rose'}; return `<span class="badge ${m[s]||'b-gray'}">${s||'—'}</span>`; }
-function chqBadge(t){ return {RPM:'b-blue',SM:'b-gold',BOUNCE:'b-rose',NILL:'b-gray',cash:'b-teal',Other:'b-gray'}[t]||'b-gray'; }
-
-function cfInput(f, val, id){
-  if(f.field_type==='select'&&f.field_options?.length)
-    return `<select id="${id}"><option value="">—</option>${f.field_options.map(o=>`<option value="${o}"${val===o?' selected':''}>${esc(o)}</option>`).join('')}</select>`;
-  if(f.field_type==='textarea') return `<textarea id="${id}" rows="2">${esc(val)}</textarea>`;
-  if(f.field_type==='boolean')
-    return `<select id="${id}"><option value="">—</option><option value="Yes"${val==='Yes'?' selected':''}>Yes</option><option value="No"${val==='No'?' selected':''}>No</option></select>`;
-  return `<input type="${f.field_type==='number'?'number':f.field_type==='date'?'date':'text'}" id="${id}" value="${esc(val)}">`;
-}
-
-function normLoanStatus(v){
-  if(!v) return 'File Given';
-  const vl = String(v).toLowerCase().trim();
-  if(vl==='done'||vl.includes('agreement completed')) return 'Agreement Completed';
-  if(vl.includes('sanction received')||vl.includes('sanction reciv')||vl.includes('sanction recied')) return 'Sanction Received';
-  if(vl.includes('cancel')) return 'Cancelled';
-  if(vl.includes('phase 2')||vl.includes('under process')||vl.includes('file under process')) return 'Under Process';
-  if(vl.includes('self fund')) return 'Under Process';
-  if(vl.includes('disburs')&&vl.includes('done')) return 'Disbursement Done';
-  if(vl.includes('file given')||vl.includes('file submitted')||vl.includes('bank')) return 'File Given';
-  return 'File Given';
-}
-
-function normEntry(v){
-  if(!v) return 'RPM';
-  const vl = String(v).toUpperCase().trim();
-  if(['RPM','SM','NILL','BOUNCE'].includes(vl)) return vl;
-  if(vl==='OTHER') return 'Other';
-  if(vl.includes('CASH')) return 'cash';
-  if(vl.startsWith('PLOT')||vl.startsWith('INFRA')) return 'SM';
-  return 'RPM';
-}
-
-async function cancelBk(id, name){
-  if(!confirm(`Cancel booking for ${name}?\nThis sets loan status to Cancelled.`)) return;
-  const {error} = await sb.from('bookings').update({loan_status:'Cancelled'}).eq('id',id);
-  if(error){toast(error.message,'err');return;}
-  await logAudit('cancel','booking',id,name,`Cancelled booking for ${name}`);
-  await loadProjData(); renderBookings(); toast('Booking cancelled');
-}
-
-async function writeLog(action, entity, entityId, entityLabel, changes){
-  await logAudit(action, entity, entityId, entityLabel, entityLabel, changes||{});
-}
-
-function showCSVGuide(){ showEl('csv-guide'); }
 
 // ── PLOT MAP ─────────────────────────────────────────────────
 const PM = { filter: { num: '', status: '' } };
 
-// Status color config
 const PLOT_STATUS = {
-  available:  { label:'Available',           color:'#22c55e', bg:'#dcfce7', border:'#16a34a', text:'#15803d' },
-  booked:     { label:'Booked / Processing', color:'#f59e0b', bg:'#fef3c7', border:'#d97706', text:'#92400e' },
-  sanction:   { label:'Sanction Received',   color:'#3b82f6', bg:'#dbeafe', border:'#1d4ed8', text:'#1e40af' },
-  completed:  { label:'Agreement Completed', color:'#16a34a', bg:'#bbf7d0', border:'#15803d', text:'#14532d' },
-  prev:       { label:'Previous Team',       color:'#a855f7', bg:'#f3e8ff', border:'#7e22ce', text:'#6b21a8' },
-  phase2:     { label:'Phase 2',             color:'#6b7280', bg:'#f3f4f6', border:'#4b5563', text:'#374151' },
+  available: { label:'Available',           color:'#22c55e', bg:'#dcfce7', border:'#16a34a', text:'#15803d' },
+  booked:    { label:'Booked / Processing', color:'#f59e0b', bg:'#fef3c7', border:'#d97706', text:'#92400e' },
+  sanction:  { label:'Sanction Received',   color:'#3b82f6', bg:'#dbeafe', border:'#1d4ed8', text:'#1e40af' },
+  completed: { label:'Agreement Completed', color:'#16a34a', bg:'#bbf7d0', border:'#15803d', text:'#14532d' },
+  prev:      { label:'Previous Team',       color:'#a855f7', bg:'#f3e8ff', border:'#7e22ce', text:'#6b21a8' },
+  phase2:    { label:'Phase 2',             color:'#6b7280', bg:'#f3f4f6', border:'#4b5563', text:'#374151' },
 };
 
 function getPlotStatus(plotNo) {
   const pn = parseInt(plotNo);
-  // Check prev team bookings
-  const prevMatch = S.prev.find(x => parseInt(x.plot_no) === pn);
-  if (prevMatch) return 'prev';
-  // Check current bookings
+  if (S.prev.find(x => parseInt(x.plot_no) === pn)) return 'prev';
   const bk = S.bookings.find(b => parseInt(b.plot_no) === pn);
   if (!bk) return 'available';
   if (bk.loan_status === 'Agreement Completed') return 'completed';
@@ -1829,20 +1488,18 @@ function renderPlotMap() {
   if (!S.curProj) return;
   const totalPlots = S.curProj.total_plots || 92;
   el('plotMapTitle').textContent = S.curProj.name + ' — Plot Map';
-  el('plotMapSub').textContent   = `${totalPlots} plots total · click any plot to see details`;
+  el('plotMapSub').textContent   = totalPlots + ' plots total · click any plot to view details';
 
-  // Summary counts
   const counts = { available:0, booked:0, sanction:0, completed:0, prev:0, phase2:0 };
-  for (let i = 1; i <= totalPlots; i++) {
-    counts[getPlotStatus(i)]++;
-  }
+  for (let i = 1; i <= totalPlots; i++) counts[getPlotStatus(i)]++;
+
   el('plotSummaryBar').innerHTML = Object.entries(counts).map(([st, cnt]) => {
     if (!cnt) return '';
     const cfg = PLOT_STATUS[st];
-    return `<div style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;background:${cfg.bg};border:1.5px solid ${cfg.border}">
-      <div style="width:10px;height:10px;border-radius:50%;background:${cfg.color}"></div>
-      <span style="font-size:12px;font-weight:600;color:${cfg.text}">${cfg.label}: ${cnt}</span>
-    </div>`;
+    return '<div style="display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;background:' + cfg.bg + ';border:1.5px solid ' + cfg.border + '">'
+      + '<div style="width:10px;height:10px;border-radius:50%;background:' + cfg.color + '"></div>'
+      + '<span style="font-size:12px;font-weight:600;color:' + cfg.text + '">' + cfg.label + ': ' + cnt + '</span>'
+      + '</div>';
   }).join('');
 
   drawPlotGrid(totalPlots);
@@ -1851,99 +1508,107 @@ function renderPlotMap() {
 function drawPlotGrid(totalPlots) {
   const grid   = el('plotGrid');
   const filter = PM.filter;
+  if (!grid) return;
   grid.innerHTML = '';
-
-  // Responsive columns: keep 10 per row for <= 100 plots
   const cols = Math.min(10, totalPlots);
-  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  grid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
 
   for (let i = 1; i <= totalPlots; i++) {
     const st  = getPlotStatus(i);
     const cfg = PLOT_STATUS[st];
-
-    // Apply filter
-    let hide = false;
-    if (filter.num && parseInt(filter.num) !== i) hide = true;
-    if (filter.status && filter.status !== st) hide = true;
+    let hide  = false;
+    if (filter.num    && parseInt(filter.num)  !== i)  hide = true;
+    if (filter.status && filter.status          !== st) hide = true;
 
     const bk = S.bookings.find(b => parseInt(b.plot_no) === i);
     const pv = S.prev.find(x => parseInt(x.plot_no) === i);
 
     const cell = document.createElement('div');
-    cell.className  = 'plot-cell';
-    cell.title      = `Plot ${i} — ${cfg.label}`;
-    cell.style.cssText = `
-      aspect-ratio:1;border-radius:8px;display:flex;flex-direction:column;
-      align-items:center;justify-content:center;cursor:pointer;
-      background:${cfg.bg};border:2px solid ${cfg.border};
-      transition:transform .15s,box-shadow .15s;position:relative;
-      opacity:${hide ? '0.15' : '1'};
-      pointer-events:${hide ? 'none' : 'auto'};
-    `;
-    cell.innerHTML = `
-      <div style="font-size:clamp(9px,1.2vw,13px);font-weight:700;color:${cfg.text};line-height:1">${i}</div>
-      ${bk ? `<div style="font-size:clamp(7px,0.8vw,9px);color:${cfg.text};opacity:.7;margin-top:2px;text-align:center;max-width:90%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${bk.bank_name||''}</div>` : ''}
-    `;
-    cell.onmouseover = () => { cell.style.transform='scale(1.08)'; cell.style.boxShadow=`0 4px 14px ${cfg.color}44`; cell.style.zIndex='2'; };
-    cell.onmouseleave= () => { cell.style.transform=''; cell.style.boxShadow=''; cell.style.zIndex=''; };
-    cell.onclick     = () => openPlotDetail(i, st, bk, pv);
+    cell.className = 'plot-cell';
+    cell.title     = 'Plot ' + i + ' — ' + cfg.label + (bk ? ' · ' + (bk.client_name||'') : '');
+    cell.style.cssText = [
+      'border-radius:8px',
+      'display:flex',
+      'flex-direction:column',
+      'align-items:center',
+      'justify-content:center',
+      'cursor:pointer',
+      'background:' + cfg.bg,
+      'border:2px solid ' + cfg.border,
+      'transition:transform .15s,box-shadow .15s',
+      'position:relative',
+      'min-height:48px',
+      'padding:4px 2px',
+      'opacity:' + (hide ? '0.12' : '1'),
+      'pointer-events:' + (hide ? 'none' : 'auto'),
+    ].join(';');
+
+    const bankLabel = bk ? (bk.bank_name||'') : (pv ? 'Prev' : '');
+    cell.innerHTML =
+      '<div style="font-size:clamp(9px,1.1vw,13px);font-weight:700;color:' + cfg.text + ';line-height:1.1">' + i + '</div>' +
+      (bankLabel ? '<div style="font-size:clamp(7px,0.75vw,9px);color:' + cfg.text + ';opacity:.65;margin-top:1px;text-align:center;max-width:90%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(bankLabel) + '</div>' : '');
+
+    cell.onmouseover  = function() { this.style.transform='scale(1.1)'; this.style.boxShadow='0 4px 16px '+cfg.color+'55'; this.style.zIndex='10'; };
+    cell.onmouseleave = function() { this.style.transform=''; this.style.boxShadow=''; this.style.zIndex=''; };
+    cell.onclick      = function() { openPlotDetail(i, st, bk, pv); };
     grid.appendChild(cell);
   }
 }
 
 function openPlotDetail(plotNo, status, bk, pv) {
   const cfg = PLOT_STATUS[status];
-  el('pdTitle').textContent = `Plot ${plotNo}`;
-  el('pdSub').innerHTML     = `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:12px;background:${cfg.bg};border:1px solid ${cfg.border};color:${cfg.text};font-size:12px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:${cfg.color}"></span>${cfg.label}</span>`;
+  el('pdTitle').textContent = 'Plot ' + plotNo;
+  el('pdSub').innerHTML = '<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 12px;border-radius:12px;background:' + cfg.bg + ';border:1px solid ' + cfg.border + ';color:' + cfg.text + ';font-size:12px;font-weight:600">'
+    + '<span style="width:8px;height:8px;border-radius:50%;background:' + cfg.color + '"></span>'
+    + cfg.label + '</span>';
+
+  const fmt = function(n){ return n ? '\u20B9' + (+n).toLocaleString('en-IN') : '\u2014'; };
 
   if (status === 'available') {
-    el('pdBody').innerHTML = `
-      <div style="text-align:center;padding:24px 0">
-        <div style="font-size:40px;margin-bottom:12px">✅</div>
-        <div style="font-size:18px;font-weight:700;color:var(--sage);margin-bottom:6px">Available</div>
-        <div style="font-size:13px;color:var(--inkf)">This plot is available for booking</div>
-      </div>`;
-    el('pdFoot').innerHTML = `
-      <button class="btn btn-outline" onclick="closeM('plotDetailModal')">Close</button>
-      <button class="btn btn-gold" onclick="closeM('plotDetailModal');openBkModal({plot_no:'${plotNo}'})">＋ Book This Plot</button>`;
+    el('pdBody').innerHTML = '<div style="text-align:center;padding:28px 0">'
+      + '<div style="font-size:44px;margin-bottom:12px">\u2705</div>'
+      + '<div style="font-size:18px;font-weight:700;color:var(--sage);margin-bottom:6px">Available for Booking</div>'
+      + '<div style="font-size:13px;color:var(--inkf)">This plot has not been booked yet</div>'
+      + '</div>';
+    el('pdFoot').innerHTML = `<button class="btn btn-outline" onclick="closeM('plotDetailModal')">Close</button><button class="btn btn-gold" onclick="closeM('plotDetailModal');openBkModal({plot_no:'${plotNo}'})">+ Book This Plot</button>`;
   } else {
-    const data = bk || pv;
+    const data  = bk || pv;
     const isPrev = !bk && !!pv;
-    const fmt  = n => n ? '₹' + (+n).toLocaleString('en-IN') : '—';
-    el('pdBody').innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:0">
-        ${row('Client',        data?.client_name || data?.client_name || '—')}
-        ${row('Plot Size',     data?.plot_size ? (data.plot_size + ' sqft') : '—')}
-        ${row('Agr. Value',    fmt(data?.agreement_value))}
-        ${!isPrev ? row('Basic Rate',    data?.basic_rate ? '₹'+data.basic_rate+'/sqft' : '—') : ''}
-        ${!isPrev ? row('SDR',           fmt(data?.sdr)) : ''}
-        ${!isPrev ? row('Bank',          data?.bank_name || '—') : ''}
-        ${!isPrev ? row('Loan Status',   data?.loan_status || '—') : ''}
-        ${!isPrev ? row('Sanction',      data?.sanction_received || '—') : ''}
-        ${!isPrev ? row('Disbursement',  data?.disbursement_status === 'done' ? '✓ Done' : 'Pending') : ''}
-        ${!isPrev ? row('Banker Contact',data?.banker_contact || '—') : ''}
-        ${!isPrev && data?.remark ? row('Remark', data.remark) : ''}
-        ${isPrev ? '<div style="margin-top:12px;padding:10px;background:var(--paper);border-radius:8px;font-size:12px;color:var(--inkf);text-align:center">Previous team booking — limited details</div>' : ''}
-      </div>`;
-    el('pdFoot').innerHTML = `
-      <button class="btn btn-outline" onclick="closeM('plotDetailModal')">Close</button>
-      ${!isPrev && bk ? `<button class="btn btn-gold" onclick="closeM('plotDetailModal');editBk('${bk.id}')">✏️ Edit Booking</button>` : ''}`;
+    const detailRows = [
+      ['Client Name',   data ? (data.client_name||'\u2014') : '\u2014'],
+      ['Plot Size',     data && data.plot_size ? data.plot_size + ' sqft' : '\u2014'],
+      ['Agr. Value',    fmt(data && data.agreement_value)],
+    ];
+    if (!isPrev) {
+      detailRows.push(
+        ['Basic Rate',      data && data.basic_rate ? '\u20B9' + data.basic_rate + '/sqft' : '\u2014'],
+        ['Infra',           data && data.infra ? '\u20B9' + data.infra + '/sqft' : '\u2014'],
+        ['SDR',             fmt(data && data.sdr)],
+        ['Bank',            (data && data.bank_name) || '\u2014'],
+        ['Loan Status',     (data && data.loan_status) || '\u2014'],
+        ['Sanction',        (data && data.sanction_received) || '\u2014'],
+        ['Disbursement',    data && data.disbursement_status === 'done' ? '\u2713 Done' : 'Pending'],
+        ['Contact',         (data && data.contact) || '\u2014'],
+        ['Banker Contact',  (data && data.banker_contact) || '\u2014'],
+      );
+      if (data && data.remark) detailRows.push(['Remark', data.remark]);
+    }
+    el('pdBody').innerHTML = detailRows.map(function(r) {
+      return '<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--border)">'
+        + '<div style="font-size:12px;color:var(--inkf);font-weight:500;flex-shrink:0;margin-right:12px">' + r[0] + '</div>'
+        + '<div style="font-size:13px;font-weight:600;text-align:right;max-width:60%">' + esc(String(r[1]||'\u2014')) + '</div>'
+        + '</div>';
+    }).join('');
+    el('pdFoot').innerHTML = `<button class="btn btn-outline" onclick="closeM('plotDetailModal')">Close</button>${bk ? `<button class="btn btn-gold" onclick="closeM('plotDetailModal');editBk('${bk.id}')">✏ Edit Booking</button>` : ''}`;
   }
   openM('plotDetailModal');
 }
 
-function row(label, value) {
-  return `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--border)">
-    <div style="font-size:12px;color:var(--inkf);font-weight:500;flex-shrink:0;margin-right:12px">${label}</div>
-    <div style="font-size:13px;font-weight:600;text-align:right;max-width:60%">${esc(String(value||'—'))}</div>
-  </div>`;
-}
-
-function openPlotFilter() { openM('plotFilterModal'); }
+function openPlotFilter()  { openM('plotFilterModal'); }
 
 function applyPlotFilter() {
-  PM.filter.num    = el('pf-num')?.value || '';
-  PM.filter.status = el('pf-status')?.value || '';
+  PM.filter.num    = (el('pf-num')?.value    || '').trim();
+  PM.filter.status = (el('pf-status')?.value || '').trim();
   closeM('plotFilterModal');
   drawPlotGrid(S.curProj?.total_plots || 92);
 }
@@ -1953,5 +1618,5 @@ function resetPlotFilter() {
   if (el('pf-num'))    el('pf-num').value    = '';
   if (el('pf-status')) el('pf-status').value = '';
   closeM('plotFilterModal');
-  renderPlotMap();
+  if (S.curProj) renderPlotMap();
 }

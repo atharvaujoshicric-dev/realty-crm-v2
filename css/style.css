@@ -67,9 +67,9 @@ body{font-family:'Outfit',sans-serif;background:var(--paper);color:var(--ink);mi
 .nav-brand{display:flex;align-items:center;gap:9px;margin-right:20px;flex-shrink:0}
 .nav-brand-icon{width:30px;height:30px;background:linear-gradient(135deg,var(--gold),var(--gold2));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px}
 .nav-brand-name{font-family:'Cormorant Garamond',serif;font-size:19px;font-weight:700;color:#fff}
-.nav-tabs{display:flex;height:58px;flex:1;overflow-x:auto;scrollbar-width:none}
+.nav-tabs{display:flex;height:58px;flex:1;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;min-width:0}
 .nav-tabs::-webkit-scrollbar{display:none}
-.nav-tab{display:flex;align-items:center;gap:6px;padding:0 15px;height:100%;font-size:13px;font-weight:500;color:rgba(255,255,255,.48);cursor:pointer;border-bottom:2.5px solid transparent;transition:var(--t);white-space:nowrap;user-select:none}
+.nav-tab{display:flex;align-items:center;gap:6px;padding:0 15px;height:100%;font-size:13px;font-weight:500;color:rgba(255,255,255,.48);cursor:pointer;border-bottom:2.5px solid transparent;transition:var(--t);white-space:nowrap;user-select:none;white-space:nowrap;flex-shrink:0}
 .nav-tab:hover{color:rgba(255,255,255,.82)}
 .nav-tab.active{color:var(--gold2);border-bottom-color:var(--gold2)}
 .nav-right{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0}

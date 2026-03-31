@@ -91,8 +91,58 @@ const groupCount = (arr, k) => { const m = {}; arr.forEach(x => { const kv = x[k
 const groupSum   = (arr, k, vk) => { const m = {}; arr.forEach(x => { const kv = x[k]||'Other'; m[kv]=(m[kv]||0)+(+x[vk]||0); }); return m; };
 const openM  = id => el(id)?.classList.add('on');
 const closeM = id => el(id)?.classList.remove('on');
-
 window.addEventListener('click', e => {
+
+function sc(cls,icon,val,label,sub){
+  return `<div class="sc ${cls}"><div class="sc-blob"></div><div class="sc-icon">${icon}</div><div class="sc-val">${val}</div><div class="sc-label">${label}</div><div class="sc-sub">${sub}</div></div>`;
+}
+function triplet(items){
+  return `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px">${items.map(x=>`<div style="text-align:center;padding:12px 7px;background:${x.bg};border-radius:9px"><div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700;color:${x.c}">${x.v}</div><div style="font-size:9.5px;text-transform:uppercase;letter-spacing:1px;color:var(--inkf);margin-top:3px">${x.l}</div></div>`).join('')}</div>`;
+}
+function statusBadge(s){
+  const m={'Agreement Completed':'b-green','Disbursement Done':'b-green','Sanction Received':'b-blue','File Given':'b-gold','Under Process':'b-teal','Cancelled':'b-rose'};
+  return `<span class="badge ${m[s]||'b-gray'}">${s||'—'}</span>`;
+}
+function chqBadge(t){ return {RPM:'b-blue',SM:'b-gold',BOUNCE:'b-rose',NILL:'b-gray',cash:'b-teal',Other:'b-gray'}[t]||'b-gray'; }
+function cfInput(f,val,id){
+  if(f.field_type==='select'&&f.field_options?.length)
+    return `<select id="${id}"><option value="">—</option>${f.field_options.map(o=>`<option value="${o}"${val===o?' selected':''}>${esc(o)}</option>`).join('')}</select>`;
+  if(f.field_type==='textarea') return `<textarea id="${id}" rows="2">${esc(val)}</textarea>`;
+  if(f.field_type==='boolean')
+    return `<select id="${id}"><option value="">—</option><option value="Yes"${val==='Yes'?' selected':''}>Yes</option><option value="No"${val==='No'?' selected':''}>No</option></select>`;
+  return `<input type="${f.field_type==='number'?'number':f.field_type==='date'?'date':'text'}" id="${id}" value="${esc(val)}">`;
+}
+function normLoanStatus(v){
+  if(!v) return 'File Given';
+  const vl=String(v).toLowerCase().trim();
+  if(vl==='done'||vl.includes('agreement completed')) return 'Agreement Completed';
+  if(vl.includes('sanction received')||vl.includes('sanction reciv')||vl.includes('sanction recied')) return 'Sanction Received';
+  if(vl.includes('cancel')) return 'Cancelled';
+  if(vl.includes('phase 2')||vl.includes('under process')||vl.includes('file under process')) return 'Under Process';
+  if(vl.includes('self fund')) return 'Under Process';
+  if(vl.includes('disburs')&&vl.includes('done')) return 'Disbursement Done';
+  return 'File Given';
+}
+function normEntry(v){
+  if(!v) return 'RPM';
+  const vl=String(v).toUpperCase().trim();
+  if(['RPM','SM','NILL','BOUNCE'].includes(vl)) return vl;
+  if(vl==='OTHER') return 'Other';
+  if(vl.includes('CASH')) return 'cash';
+  if(vl.startsWith('PLOT')||vl.startsWith('INFRA')) return 'SM';
+  return 'RPM';
+}
+async function cancelBk(id,name){
+  if(!confirm(`Cancel booking for ${name}?\nThis sets status to Cancelled.`)) return;
+  const {error}=await sb.from('bookings').update({loan_status:'Cancelled'}).eq('id',id);
+  if(error){toast(error.message,'err');return;}
+  await logAudit('cancel','booking',id,name,'Cancelled booking for '+name);
+  await loadProjData(); renderBookings(); toast('Booking cancelled');
+}
+async function writeLog(action,entity,entityId,entityLabel){
+  await logAudit(action,entity,entityId,entityLabel,entityLabel||'');
+}
+
   if (e.target.classList.contains('overlay')) e.target.classList.remove('on');
 });
 
@@ -174,7 +224,13 @@ async function boot(authUser) {
       buildNav(prof.role);
       if (S.projects.length > 1) el('projChip').style.display = 'flex';
       if (S.curProj) { goPage('p-dash'); await loadProjData(); renderDash(); }
-      else showLogin('No projects assigned. Contact admin.');
+      else {
+        // Don't wipe session — show error in app UI without logging out
+        showLoader(false);
+        goPage('p-dash');
+        const d = el('dashStats');
+        if (d) d.innerHTML = '<div style="padding:20px;color:var(--rose);font-size:14px">⚠️ No projects assigned to your account. Contact your administrator.</div>';
+      }
     }
   } catch(e) {
     console.error('Boot error:', e);

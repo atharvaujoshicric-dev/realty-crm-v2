@@ -1582,18 +1582,9 @@ function getPlotStatus(plotNo) {
 function renderPlotMap() {
   if (!S.curProj) return;
 
-  // Collect all booked/prev plot numbers to derive range
-  const bkNums = S.bookings.map(b => parseInt(b.plot_no)).filter(n => !isNaN(n) && n <= 300);
-  const pvNums = S.prev.map(p => parseInt(p.plot_no)).filter(n => !isNaN(n) && n <= 300);
-  const allNums = [...bkNums, ...pvNums];
-  const maxPlot = allNums.length ? Math.max(...allNums) : 92;
-  // Start from 11 (remove old top row 1-10 as instructed)
-  const START_PLOT = 11;
-  const totalPlots = Math.max(maxPlot, 92);
-
-  // Build plot data
+  // Build plot data for ALL plots 1-92
   const plotData = {};
-  for (let i = START_PLOT; i <= totalPlots; i++) {
+  for (let i = 1; i <= 92; i++) {
     const bk = S.bookings.find(b => parseInt(b.plot_no) === i);
     const pv = S.prev.find(x => parseInt(x.plot_no) === i);
     let status = 'available';
@@ -1615,176 +1606,287 @@ function renderPlotMap() {
     };
   }
 
-  // Summary counts
+  // Summary counts (single row)
   const counts = {};
   Object.values(plotData).forEach(p => counts[p.status] = (counts[p.status]||0)+1);
   const smBar = el('plotSummaryBar');
   if (smBar) smBar.innerHTML = Object.entries(counts).map(([st,cnt])=>{
     const cfg = PLOT_STATUS[st]; if(!cfg||!cnt) return '';
-    return `<div style="display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;background:${cfg.bg};border:1.5px solid ${cfg.border}">
-      <div style="width:9px;height:9px;border-radius:50%;background:${cfg.color}"></div>
-      <span style="font-size:12px;font-weight:600;color:${cfg.text}">${cfg.label}: ${cnt}</span></div>`;
+    return `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:20px;background:${cfg.bg};border:1.5px solid ${cfg.border};white-space:nowrap">
+      <span style="width:8px;height:8px;border-radius:50%;background:${cfg.color};flex-shrink:0"></span>
+      <span style="font-size:12px;font-weight:600;color:${cfg.text}">${cfg.label}: ${cnt}</span></span>`;
   }).join('');
 
   const container = el('plot3dContainer');
   if (!container) return;
-  // Cleanup previous renderer
   if (container._cleanup) { container._cleanup(); }
   container.innerHTML = '';
-
-  init3DPlotMap(container, plotData, START_PLOT, totalPlots);
+  init3DPlotMap(container, plotData);
 }
 
-function init3DPlotMap(container, plotData, startPlot, totalPlots) {
+function init3DPlotMap(container, plotData) {
   if (typeof THREE === 'undefined') {
-    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:#64748b"><div class="spin spin-dk"></div><p>Loading 3D engine…</p></div>';
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-    script.onload = () => init3DPlotMap(container, plotData, startPlot, totalPlots);
-    script.onerror = () => { container.innerHTML = '<div style="padding:40px;text-align:center;color:#ef4444">Failed to load 3D engine. Check internet connection.</div>'; };
-    document.head.appendChild(script);
+    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:#64748b"><div class="spin spin-dk"></div><p style="font-family:Outfit,sans-serif">Loading 3D engine…</p></div>';
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+    sc.onload = () => init3DPlotMap(container, plotData);
+    sc.onerror = () => { container.innerHTML = '<div style="padding:40px;text-align:center;color:#ef4444;font-family:Outfit,sans-serif">Failed to load 3D engine. Check internet connection.</div>'; };
+    document.head.appendChild(sc);
     return;
   }
 
-  // ── LAYOUT DEFINITION ─────────────────────────────────────────
-  // Based on SOTR master plan PDF: plots 11-92 in single rows per block
-  // Each entry: [gridCol, gridRow]  (col=X axis west→east, row=Z axis south→north)
-  // Roads are implicit gaps between rows
-  // Layout from PDF (single row per block, reading layout carefully):
+  // ── MASTER PLAN LAYOUT ─────────────────────────────────────────
+  // Based on the actual SOTR master plan PDF/image
+  // The site is elongated W→E with an irregular southern boundary (river)
+  // Roads divide the site into horizontal bands (N-S) with vertical connectors
   //
-  // Row 0 (southernmost): 11,12,13,14,15,16,17,18,19,20
-  // Road gap
-  // Row 1: 21,22,23,24,25,26,27,28,29,30
-  // Road gap
-  // Row 2: 31,32,33,34,35,36,37,38,39,40
-  // Road gap
-  // Row 3: 41,42,43,44,45,46,47,48,49,50
-  // Road gap
-  // Row 4: 51,52,53,54  (only 4 wide on left side)
-  // Road gap
-  // Row 5: 55,56,57,58,59,60,61,62,63
-  // Road gap
-  // Row 6: 64,65,66,67,68,69,70,71
-  // Road gap
-  // Row 7: 72,73,74,75,76,77
-  // Road gap
-  // Row 8: 78,79,80,81,82,83,84,85,86,87
-  // Road gap
-  // Row 9 (northernmost): 88,89,90,91,92
+  // Coordinate system: X = West→East, Z = South→North
+  // Plot entries: [plotNo, x, z, w, d]  (x,z = position, w,d = width,depth in grid units)
+  // 1 grid unit = one standard plot width (~12m real)
 
-  const PLOT_LAYOUT = [
-    // [plotNo, col, row]
-    // Row 0
-    [11,0,0],[12,1,0],[13,2,0],[14,3,0],[15,4,0],[16,5,0],[17,6,0],[18,7,0],[19,8,0],[20,9,0],
-    // Row 1
-    [21,0,1],[22,1,1],[23,2,1],[24,3,1],[25,4,1],[26,5,1],[27,6,1],[28,7,1],[29,8,1],[30,9,1],
-    // Row 2
-    [31,0,2],[32,1,2],[33,2,2],[34,3,2],[35,4,2],[36,5,2],[37,6,2],[38,7,2],[39,8,2],[40,9,2],
-    // Row 3
-    [41,0,3],[42,1,3],[43,2,3],[44,3,3],[45,4,3],[46,5,3],[47,6,3],[48,7,3],[49,8,3],[50,9,3],
-    // Row 4 (shorter row left side, based on PDF)
-    [51,0,4],[52,1,4],[53,2,4],[54,3,4],
-    // Row 5 (shifted - PDF shows offset)
-    [55,0,5],[56,1,5],[57,2,5],[58,3,5],[59,4,5],[60,5,5],[61,6,5],[62,7,5],[63,8,5],
-    // Row 6
-    [64,0,6],[65,1,6],[66,2,6],[67,3,6],[68,4,6],[69,5,6],[70,6,6],[71,7,6],
-    // Row 7
-    [72,0,7],[73,1,7],[74,2,7],[75,3,7],[76,4,7],[77,5,7],
-    // Row 8
-    [78,0,8],[79,1,8],[80,2,8],[81,3,8],[82,4,8],[83,5,8],[84,6,8],[85,7,8],[86,8,8],[87,9,8],
-    // Row 9
-    [88,0,9],[89,1,9],[90,2,9],[91,3,9],[92,4,9],
+  const U = 2.6;  // grid unit size in 3D units
+  const G = 0.25; // gap between plots
+  const R = 1.6;  // road width (E-W roads between row blocks)
+  const RV= 1.2;  // road width (N-S roads between column groups)
+
+  // Helper: convert grid coords to 3D position
+  // Rows are stacked north with road gaps between BLOCKS
+  // Block heights (number of rows) from south:
+  // Block 0 (south bottom): 1 row
+  // road gap
+  // Block 1: 1 row
+  // road gap
+  // Block 2: 1 row
+  // road gap
+  // Block 3: 1 row
+  // road gap
+  // Block 4: 1 row  ← main road (15M) here
+  // road gap (bigger)
+  // Block 5: 1 row
+  // road gap
+  // Block 6: 1 row
+  // road gap
+  // Block 7: 1 row
+  // road gap
+  // Block 8: 1 row (top, small plots 4-9)
+  // Block 9: large plots 01,02,03,10 at very top
+
+  // Block Z offsets (south=0, north increases)
+  const BZ = [
+    0,                    // Block 0: row 0
+    U + G + R,            // Block 1: row 1 (after 1 road)
+    (U+G+R)*2,            // Block 2
+    (U+G+R)*3,            // Block 3
+    (U+G+R)*4,            // Block 4
+    (U+G+R)*5,            // Block 5 (after main 15M road — bigger gap)
+    (U+G+R)*6,            // Block 6
+    (U+G+R)*7,            // Block 7
+    (U+G+R)*8,            // Block 8 (small plots near top)
   ];
 
-  // ── SCENE SETUP ───────────────────────────────────────────────
-  const PLOT_W = 2.4, PLOT_D = 2.0, GAP_X = 0.2, GAP_Z = 0.2, ROAD_Z = 1.4;
-  const ROWS = 10, COLS = 10;
-  // Each row offset includes road gap
-  const rowZ = r => r * (PLOT_D + GAP_Z + ROAD_Z);
-  const colX = c => c * (PLOT_W + GAP_X);
-  const gridW = COLS * PLOT_W + (COLS-1) * GAP_X;
-  const gridD = rowZ(ROWS - 1) + PLOT_D;
+  // N-S column group X offsets
+  // Left group (plots per row): x starts at 0
+  // Right sub-group (plots 39-92 on right side of a main N-S road)
+  const COL = (c, grp=0) => {
+    const base = grp === 1 ? (10*(U+G) + RV) : 0;  // group 1 is right of main N-S road
+    return base + c*(U+G);
+  };
 
+  // PLOT LAYOUT: [plotNo, x3d, z3d, w_multiplier, d_multiplier]
+  // Reading from master plan: rows S→N, each row W→E
+  const PLOTS = [
+    // ── LARGE IRREGULAR PLOTS (NW, top-left area) ──────────────
+    // Plot 01: Far NW large triangular plot
+    [1,  COL(-3), BZ[8]+U*1.2, 2.5, 2.5],
+    // Plot 02: Medium plot
+    [2,  COL(-2), BZ[8]+U*0.3, 1.8, 1.5],
+    // Plot 03: Medium-large plot  
+    [3,  COL(-2.5), BZ[7]+U*0.5, 2.0, 1.5],
+    // Plot 10: NE large plot (rightmost top)
+    [10, COL(10.5), BZ[8], 2.0, 2.0],
+
+    // ── ROW 8 (near top): Plots 4-9 (standard plots between large ones) ──
+    [4,  COL(0), BZ[8], 1,1], [5,  COL(1), BZ[8], 1,1], [6,  COL(2), BZ[8], 1,1],
+    [7,  COL(3), BZ[8], 1,1], [8,  COL(4), BZ[8], 1,1], [9,  COL(5), BZ[8], 1,1],
+
+    // ── ROW 7: Plots 11-20 ──────────────────────────────────────
+    [11, COL(0), BZ[7], 1,1], [12, COL(1), BZ[7], 1,1], [13, COL(2), BZ[7], 1,1],
+    [14, COL(3), BZ[7], 1,1], [15, COL(4), BZ[7], 1,1], [16, COL(5), BZ[7], 1,1],
+    [17, COL(6), BZ[7], 1,1], [18, COL(7), BZ[7], 1,1], [19, COL(8), BZ[7], 1,1],
+    [20, COL(9), BZ[7], 1,1],
+
+    // ── ROW 6: Plots 21-30 ──────────────────────────────────────
+    [21, COL(0), BZ[6], 1,1], [22, COL(1), BZ[6], 1,1], [23, COL(2), BZ[6], 1,1],
+    [24, COL(3), BZ[6], 1,1], [25, COL(4), BZ[6], 1,1], [26, COL(5), BZ[6], 1,1],
+    [27, COL(6), BZ[6], 1,1], [28, COL(7), BZ[6], 1,1], [29, COL(8), BZ[6], 1,1],
+    [30, COL(9), BZ[6], 1,1],
+
+    // ── ROW 5: Plots 31-40 ──────────────────────────────────────
+    [31, COL(0), BZ[5], 1.5,1], [32, COL(1.5), BZ[5], 1,1], [33, COL(2.5), BZ[5], 1,1],
+    [34, COL(3.5), BZ[5], 1,1], [35, COL(4.5), BZ[5], 1,1], [36, COL(5.5), BZ[5], 1,1],
+    [37, COL(6.5), BZ[5], 1,1], [38, COL(7.5), BZ[5], 1,1], [39, COL(8.5), BZ[5], 1,1],
+    [40, COL(9.5), BZ[5], 1.5,1],
+
+    // ── ROW 4: Plots 41-50 ──────────────────────────────────────
+    [41, COL(0), BZ[4], 1,1], [42, COL(1), BZ[4], 1,1], [43, COL(2), BZ[4], 1,1],
+    [44, COL(3), BZ[4], 1,1], [45, COL(4), BZ[4], 1,1], [46, COL(5), BZ[4], 1,1],
+    [47, COL(6), BZ[4], 1.5,1], [48, COL(7.5), BZ[4], 1.5,1],
+    [49, COL(9), BZ[4], 1,1],  [50, COL(10), BZ[4], 1,1],
+
+    // ── ROW 3: Plots 51-54 (partial row, left only) + right-side plots ──
+    [51, COL(0), BZ[3], 1,1], [52, COL(1), BZ[3], 1,1],
+    [53, COL(2), BZ[3], 1,1], [54, COL(3), BZ[3], 1,1],
+
+    // ── ROW 2: Plots 55-63 (slightly offset east) ───────────────
+    [55, COL(0), BZ[2], 1,1], [56, COL(1), BZ[2], 1,1], [57, COL(2), BZ[2], 1,1],
+    [58, COL(3), BZ[2], 1.5,1], [59, COL(4.5), BZ[2], 1,1], [60, COL(5.5), BZ[2], 1,1],
+    [61, COL(6.5), BZ[2], 1,1], [62, COL(7.5), BZ[2], 1,1], [63, COL(8.5), BZ[2], 1,1],
+
+    // ── ROW 1: Plots 64-70 ──────────────────────────────────────
+    [64, COL(0), BZ[1], 1,1], [65, COL(1), BZ[1], 1,1], [66, COL(2), BZ[1], 1,1],
+    [67, COL(3), BZ[1], 1,1], [68, COL(4), BZ[1], 1,1], [69, COL(5), BZ[1], 1,1],
+    [70, COL(6), BZ[1], 1,1],
+
+    // ── ROW 0 (southernmost): Plots 71-77 ───────────────────────
+    [71, COL(0), BZ[0], 1,1], [72, COL(1), BZ[0], 1,1], [73, COL(2), BZ[0], 1,1],
+    [74, COL(3), BZ[0], 1,1], [75, COL(4), BZ[0], 1,1], [76, COL(5), BZ[0], 1,1],
+    [77, COL(6), BZ[0], 1,1],
+
+    // ── EAST BLOCK: Plots 78-92 (right of main N-S road) ────────
+    // Block B bottom row: 88-92
+    [88, COL(0,1), BZ[3], 1,1], [89, COL(1,1), BZ[3], 1,1], [90, COL(2,1), BZ[3], 1,1],
+    [91, COL(3,1), BZ[3], 1,1], [92, COL(4,1), BZ[3], 1,1],
+
+    // Block B upper row: 78-87
+    [78, COL(0,1), BZ[4], 1,1], [79, COL(1,1), BZ[4], 1,1], [80, COL(2,1), BZ[4], 1,1],
+    [81, COL(3,1), BZ[4], 1,1], [82, COL(4,1), BZ[4], 1,1], [83, COL(5,1), BZ[4], 1,1],
+    [84, COL(6,1), BZ[4], 1,1], [85, COL(7,1), BZ[4], 1,1], [86, COL(8,1), BZ[4], 1,1],
+    [87, COL(9,1), BZ[4], 1,1],
+  ];
+
+  // ── SCENE ─────────────────────────────────────────────────────
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xf0ede6);
+  scene.background = new THREE.Color(0xeae6df);
 
-  const aspect = container.clientWidth / (container.clientHeight || 600);
-  const camera = new THREE.PerspectiveCamera(42, aspect, 0.1, 300);
+  const W = container.clientWidth || 960;
+  const H = container.clientHeight || 620;
+  const camera = new THREE.PerspectiveCamera(40, W/H, 0.1, 400);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(container.clientWidth || 900, container.clientHeight || 600);
+  renderer.setSize(W, H);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   container.appendChild(renderer.domElement);
 
   // ── LIGHTS ────────────────────────────────────────────────────
-  scene.add(new THREE.AmbientLight(0xffffff, 0.65));
-  const sun = new THREE.DirectionalLight(0xfff8e7, 1.3);
-  sun.position.set(25, 40, 15);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const sun = new THREE.DirectionalLight(0xfff8e7, 1.4);
+  sun.position.set(30, 50, 20);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.near = 0.5;
-  sun.shadow.camera.far = 200;
-  sun.shadow.camera.left = -50; sun.shadow.camera.right = 50;
-  sun.shadow.camera.top  =  50; sun.shadow.camera.bottom = -50;
+  sun.shadow.camera.near = 1;
+  sun.shadow.camera.far = 300;
+  sun.shadow.camera.left = -80; sun.shadow.camera.right = 80;
+  sun.shadow.camera.top  =  80; sun.shadow.camera.bottom = -80;
   scene.add(sun);
-  const fill = new THREE.DirectionalLight(0xd6eaff, 0.35);
-  fill.position.set(-15, 12, -8);
-  scene.add(fill);
+  scene.add(Object.assign(new THREE.DirectionalLight(0xd0e8ff, 0.35), {position: new THREE.Vector3(-20,15,-10)}));
 
   // ── GROUND ────────────────────────────────────────────────────
-  const gGeo = new THREE.PlaneGeometry(gridW + 12, gridD + 12);
-  const gMat = new THREE.MeshLambertMaterial({ color: 0xddd8ce });
-  const ground = new THREE.Mesh(gGeo, gMat);
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(gridW/2 - PLOT_W/2, -0.02, gridD/2 - PLOT_D/2);
+  // Compute bounding box of all plots
+  let minX=Infinity, maxX=-Infinity, minZ=Infinity, maxZ=-Infinity;
+  PLOTS.forEach(([,x,z,w,d]) => {
+    minX=Math.min(minX, x-G); maxX=Math.max(maxX, x+w*U+G);
+    minZ=Math.min(minZ, z-G); maxZ=Math.max(maxZ, z+d*U+G);
+  });
+  const cx=(minX+maxX)/2, cz=(minZ+maxZ)/2;
+
+  const gW = maxX-minX+10, gD = maxZ-minZ+10;
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(gW, gD),
+    new THREE.MeshLambertMaterial({ color: 0xd4cfc5 })
+  );
+  ground.rotation.x = -Math.PI/2;
+  ground.position.set(cx, -0.02, cz);
   ground.receiveShadow = true;
   scene.add(ground);
 
-  // ── ROADS (between rows) ──────────────────────────────────────
-  const roadMat = new THREE.MeshLambertMaterial({ color: 0xbbb6ae });
-  for (let r = 0; r < ROWS - 1; r++) {
-    const rz = rowZ(r) + PLOT_D + GAP_Z / 2 + ROAD_Z / 2;
-    const roadGeo = new THREE.PlaneGeometry(gridW + 4, ROAD_Z);
-    const road = new THREE.Mesh(roadGeo, roadMat);
-    road.rotation.x = -Math.PI / 2;
-    road.position.set(gridW/2 - PLOT_W/2, 0, rz);
-    road.receiveShadow = true;
-    scene.add(road);
-    // Road lane markings
-    const laneGeo = new THREE.PlaneGeometry(gridW + 2, 0.08);
-    const laneMat = new THREE.MeshLambertMaterial({ color: 0xfff8e0 });
-    const lane = new THREE.Mesh(laneGeo, laneMat);
-    lane.rotation.x = -Math.PI / 2;
-    lane.position.set(gridW/2 - PLOT_W/2, 0.005, rz);
-    scene.add(lane);
-  }
+  // ── ROADS (horizontal E-W between block rows) ─────────────────
+  const roadMat = new THREE.MeshLambertMaterial({ color: 0xb8b2a8 });
+  const laneMat = new THREE.MeshLambertMaterial({ color: 0xfff3c0 });
+  BZ.slice(1).forEach(z => {
+    const rz = z - R/2;
+    const rGeo = new THREE.PlaneGeometry(gW - 4, R);
+    const r = new THREE.Mesh(rGeo, roadMat);
+    r.rotation.x = -Math.PI/2;
+    r.position.set(cx, 0, rz);
+    r.receiveShadow = true;
+    scene.add(r);
+    // Centre line
+    const l = new THREE.Mesh(new THREE.PlaneGeometry(gW-6, 0.07), laneMat);
+    l.rotation.x = -Math.PI/2;
+    l.position.set(cx, 0.01, rz);
+    scene.add(l);
+  });
+
+  // Main N-S road (between left and right blocks)
+  const nsRoadX = COL(10, 0) + RV/2 - G/2;
+  const nsRoad = new THREE.Mesh(
+    new THREE.PlaneGeometry(RV, gD - 4),
+    roadMat
+  );
+  nsRoad.rotation.x = -Math.PI/2;
+  nsRoad.position.set(nsRoadX, 0, cz);
+  nsRoad.receiveShadow = true;
+  scene.add(nsRoad);
+
+  // River/boundary indicator (southern edge)
+  const riverMat = new THREE.MeshLambertMaterial({ color: 0x7ec8e3, transparent: true, opacity: 0.55 });
+  const river = new THREE.Mesh(new THREE.PlaneGeometry(gW, 3.5), riverMat);
+  river.rotation.x = -Math.PI/2;
+  river.position.set(cx, 0, minZ - 2.2);
+  scene.add(river);
+
+  // Amenity space (left/west side, green area)
+  const amenMat = new THREE.MeshLambertMaterial({ color: 0x86c87a, transparent: true, opacity: 0.7 });
+  const amen = new THREE.Mesh(new THREE.PlaneGeometry(U*2.8, gD*0.55), amenMat);
+  amen.rotation.x = -Math.PI/2;
+  amen.position.set(minX - U*1.8, 0, cz + gD*0.1);
+  scene.add(amen);
+  // Amenity label
+  const amenLabelC = document.createElement('canvas');
+  amenLabelC.width = 256; amenLabelC.height = 96;
+  const actx = amenLabelC.getContext('2d');
+  actx.font = 'bold 22px Arial'; actx.fillStyle = '#2d6a4f';
+  actx.textAlign = 'center'; actx.textBaseline = 'middle';
+  actx.fillText('AMENITY', 128, 38); actx.fillText('SPACE 01', 128, 64);
+  const amenTex = new THREE.CanvasTexture(amenLabelC);
+  const amenSp = new THREE.Sprite(new THREE.SpriteMaterial({ map: amenTex, transparent: true }));
+  amenSp.scale.set(4, 1.5, 1);
+  amenSp.position.set(minX - U*1.8, 0.3, cz + gD*0.1);
+  scene.add(amenSp);
 
   // ── PLOT BOXES ────────────────────────────────────────────────
   const plotMeshes = [];
-  const spriteGroup = new THREE.Group();
-  scene.add(spriteGroup);
 
-  PLOT_LAYOUT.forEach(([pn, col, row]) => {
-    const pd  = plotData[pn] || { status: 'available', plot_no: pn };
+  PLOTS.forEach(([pn, x, z, w, d]) => {
+    const pd  = plotData[pn] || { status:'available', plot_no:pn };
     const cfg = PLOT_STATUS[pd.status] || PLOT_STATUS.available;
 
-    const x = colX(col);
-    const z = rowZ(row);
+    const pw = w * U - G;
+    const pd3 = d * U - G;
 
-    // Height encodes status
-    const h = pd.status === 'completed' ? 0.9
-            : pd.status === 'booked'    ? 0.65
-            : pd.status === 'sanction'  ? 0.75
-            : pd.status === 'prev'      ? 0.55
-            : pd.status === 'phase2'    ? 0.45
-            : 0.25; // available = flat
+    // Height = status indicator
+    const h = pd.status==='completed' ? 1.1
+            : pd.status==='booked'    ? 0.72
+            : pd.status==='sanction'  ? 0.88
+            : pd.status==='prev'      ? 0.6
+            : pd.status==='phase2'    ? 0.48
+            : 0.28;
 
-    const geo  = new THREE.BoxGeometry(PLOT_W - 0.1, h, PLOT_D - 0.1);
-    const topC   = new THREE.Color(cfg.top3d  || cfg.bg);
-    const sideC  = new THREE.Color(cfg.side3d || cfg.border);
-
+    const geo = new THREE.BoxGeometry(pw, h, pd3);
+    const topC  = new THREE.Color(cfg.top3d  || cfg.bg);
+    const sideC = new THREE.Color(cfg.side3d || cfg.border);
     const mats = [
       new THREE.MeshLambertMaterial({ color: sideC }),
       new THREE.MeshLambertMaterial({ color: sideC }),
@@ -1795,36 +1897,35 @@ function init3DPlotMap(container, plotData, startPlot, totalPlots) {
     ];
 
     const mesh = new THREE.Mesh(geo, mats);
-    mesh.position.set(x, h/2, z);
+    mesh.position.set(x + pw/2, h/2, z + pd3/2);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.userData = { plotNo: pn, data: pd, baseY: h/2, h };
+    mesh.userData = { plotNo:pn, data:pd, baseY:h/2, h };
     scene.add(mesh);
     plotMeshes.push(mesh);
 
-    // Plot number label sprite
+    // Plot number label
     const cv = document.createElement('canvas');
     cv.width = 128; cv.height = 80;
     const ctx = cv.getContext('2d');
-    ctx.font = 'bold 42px Arial';
+    ctx.font = 'bold 38px Arial';
     ctx.fillStyle = cfg.text || '#374151';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(String(pn), 64, 40);
     const tex = new THREE.CanvasTexture(cv);
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
-    sp.scale.set(1.1, 0.7, 1);
-    sp.position.set(x, h + 0.5, z);
-    spriteGroup.add(sp);
+    sp.scale.set(w*U*0.85, d*U*0.6, 1);
+    sp.position.set(x + pw/2, h + 0.45, z + pd3/2);
+    scene.add(sp);
   });
 
   // ── CAMERA ORBIT ──────────────────────────────────────────────
-  const center = new THREE.Vector3(gridW/2 - PLOT_W/2, 0, gridD/2 - PLOT_D/2);
-  let theta = 0.55, phi = 0.85;
-  let radius = Math.max(gridW, gridD) * 1.5;
-  let isDragging = false, lastX = 0, lastY = 0;
+  const center = new THREE.Vector3(cx, 0, cz);
+  let theta = 0.52, phi = 0.82;
+  let radius = Math.max(gW, gD) * 1.35;
+  let isDragging=false, lastX=0, lastY=0;
 
-  function updateCamera() {
+  function updateCam() {
     camera.position.set(
       center.x + radius * Math.sin(phi) * Math.sin(theta),
       center.y + radius * Math.cos(phi),
@@ -1832,24 +1933,22 @@ function init3DPlotMap(container, plotData, startPlot, totalPlots) {
     );
     camera.lookAt(center);
   }
-  updateCamera();
+  updateCam();
 
   const dom = renderer.domElement;
   dom.style.cursor = 'grab';
-
   dom.addEventListener('mousedown', e => { isDragging=true; lastX=e.clientX; lastY=e.clientY; dom.style.cursor='grabbing'; });
   window.addEventListener('mouseup', () => { isDragging=false; dom.style.cursor='grab'; });
   window.addEventListener('mousemove', e => {
     if (!isDragging) return;
     theta -= (e.clientX-lastX)*0.007;
-    phi    = Math.max(0.18, Math.min(1.45, phi+(e.clientY-lastY)*0.007));
-    lastX=e.clientX; lastY=e.clientY;
-    updateCamera();
+    phi    = Math.max(0.15, Math.min(1.48, phi+(e.clientY-lastY)*0.007));
+    lastX=e.clientX; lastY=e.clientY; updateCam();
   });
   dom.addEventListener('wheel', e => {
     e.preventDefault();
-    radius = Math.max(6, Math.min(80, radius+e.deltaY*0.05));
-    updateCamera();
+    radius = Math.max(8, Math.min(120, radius+e.deltaY*0.06));
+    updateCam();
   }, { passive:false });
 
   // Touch
@@ -1862,92 +1961,88 @@ function init3DPlotMap(container, plotData, startPlot, totalPlots) {
     e.preventDefault();
     if(e.touches.length===1&&lt){
       theta-=(e.touches[0].clientX-lt.clientX)*0.009;
-      phi=Math.max(0.18,Math.min(1.45,phi+(e.touches[0].clientY-lt.clientY)*0.009));
-      lt=e.touches[0]; updateCamera();
+      phi=Math.max(0.15,Math.min(1.48,phi+(e.touches[0].clientY-lt.clientY)*0.009));
+      lt=e.touches[0]; updateCam();
     }
     if(e.touches.length===2){
       const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;
       const d=Math.sqrt(dx*dx+dy*dy);
-      radius=Math.max(6,Math.min(80,radius-(d-lpd)*0.06));
-      lpd=d; updateCamera();
+      radius=Math.max(8,Math.min(120,radius-(d-lpd)*0.07));
+      lpd=d; updateCam();
     }
   },{passive:false});
   dom.addEventListener('touchend',()=>{isDragging=false;lt=null;});
 
   // ── HOVER TOOLTIP ─────────────────────────────────────────────
   const raycaster = new THREE.Raycaster();
-  const mouse     = new THREE.Vector2();
+  const mouse = new THREE.Vector2();
   let hoveredMesh = null;
 
   const tip = document.createElement('div');
-  tip.style.cssText = [
+  tip.style.cssText=[
     'position:absolute','display:none','z-index:999','pointer-events:none',
     'background:#fff','border-radius:12px','padding:14px 18px',
     'box-shadow:0 8px 32px rgba(0,0,0,.15)','border:1px solid #e2e8f0',
     'font-family:Outfit,sans-serif','min-width:210px','max-width:280px',
   ].join(';');
-  container.style.position = 'relative';
+  container.style.position='relative';
   container.appendChild(tip);
 
   dom.addEventListener('mousemove', e => {
-    if (isDragging) { tip.style.display='none'; return; }
-    const rect = dom.getBoundingClientRect();
-    mouse.x = ((e.clientX-rect.left)/rect.width)*2-1;
-    mouse.y = -((e.clientY-rect.top)/rect.height)*2+1;
-    raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObjects(plotMeshes);
-
-    if (hits.length) {
-      const mesh = hits[0].object;
-      // Lift on hover
-      if (mesh !== hoveredMesh) {
-        if (hoveredMesh) hoveredMesh.position.y = hoveredMesh.userData.baseY;
-        hoveredMesh = mesh;
-        mesh.position.y = mesh.userData.baseY + 0.3;
-        dom.style.cursor = 'pointer';
-      }
-      const pd  = mesh.userData.data;
-      const cfg = PLOT_STATUS[pd.status] || PLOT_STATUS.available;
-      const fmt = n => n ? '₹'+Number(n).toLocaleString('en-IN') : '—';
-      tip.style.display = 'block';
-      tip.style.left = (e.clientX-rect.left+18)+'px';
-      tip.style.top  = (e.clientY-rect.top -10)+'px';
-      tip.innerHTML = `
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:9px;border-bottom:1px solid #f1f5f9">
-          <div style="width:11px;height:11px;border-radius:50%;background:${cfg.color};flex-shrink:0;box-shadow:0 0 0 2px ${cfg.border}40"></div>
-          <span style="font-size:15px;font-weight:700">Plot ${pd.plot_no}</span>
-          <span style="margin-left:auto;font-size:10px;padding:2px 9px;border-radius:10px;background:${cfg.bg};color:${cfg.text};font-weight:700;border:1px solid ${cfg.border}">${cfg.label}</span>
-        </div>
-        ${pd.client_name
-          ? `<div style="margin-bottom:7px"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Client</div>
-             <div style="font-size:13px;font-weight:600;margin-top:2px">${pd.client_name}</div>
-             ${pd.contact?`<div style="font-size:12px;color:#64748b;margin-top:1px">📞 ${pd.contact}</div>`:''}</div>`
-          : `<div style="color:#94a3b8;font-size:12px;margin-bottom:7px;font-style:italic">Available for booking</div>`}
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          ${pd.plot_size?`<div><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Area</div><div style="font-size:13px;font-weight:700;margin-top:2px">${pd.plot_size} sqft</div></div>`:''}
-          ${pd.agreement_value?`<div><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Value</div><div style="font-size:13px;font-weight:700;margin-top:2px">${fmt(pd.agreement_value)}</div></div>`:''}
-        </div>
-        <div style="margin-top:9px;font-size:10px;color:#94a3b8;text-align:center">Click to view full details</div>`;
-    } else {
-      if (hoveredMesh) { hoveredMesh.position.y = hoveredMesh.userData.baseY; hoveredMesh = null; dom.style.cursor='grab'; }
-      tip.style.display = 'none';
-    }
-  });
-
-  dom.addEventListener('mouseleave', () => {
-    tip.style.display='none';
-    if(hoveredMesh){hoveredMesh.position.y=hoveredMesh.userData.baseY;hoveredMesh=null;}
-  });
-
-  // Click → open detail modal
-  dom.addEventListener('click', e => {
-    if (Math.abs(e.movementX)+Math.abs(e.movementY) > 5) return;
+    if(isDragging){tip.style.display='none';return;}
     const rect=dom.getBoundingClientRect();
     mouse.x=((e.clientX-rect.left)/rect.width)*2-1;
     mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
     raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObjects(plotMeshes);
-    if (hits.length) {
+    const hits=raycaster.intersectObjects(plotMeshes);
+    if(hits.length){
+      const mesh=hits[0].object;
+      if(mesh!==hoveredMesh){
+        if(hoveredMesh) hoveredMesh.position.y=hoveredMesh.userData.baseY;
+        hoveredMesh=mesh;
+        mesh.position.y=mesh.userData.baseY+0.35;
+        dom.style.cursor='pointer';
+      }
+      const pd=mesh.userData.data;
+      const cfg=PLOT_STATUS[pd.status]||PLOT_STATUS.available;
+      const fmt=n=>n?'₹'+Number(n).toLocaleString('en-IN'):'—';
+      let tx=e.clientX-rect.left+18, ty=e.clientY-rect.top-10;
+      if(tx+290>rect.width) tx=e.clientX-rect.left-300;
+      tip.style.left=tx+'px'; tip.style.top=ty+'px'; tip.style.display='block';
+      tip.innerHTML=`
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:9px;border-bottom:1px solid #f1f5f9">
+          <div style="width:11px;height:11px;border-radius:50%;background:${cfg.color};box-shadow:0 0 0 2px ${cfg.border}50"></div>
+          <span style="font-size:15px;font-weight:700">Plot ${pd.plot_no}</span>
+          <span style="margin-left:auto;font-size:10px;padding:2px 9px;border-radius:10px;background:${cfg.bg};color:${cfg.text};font-weight:700;border:1px solid ${cfg.border}">${cfg.label}</span>
+        </div>
+        ${pd.client_name
+          ?`<div style="margin-bottom:7px">
+              <div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Client</div>
+              <div style="font-size:13px;font-weight:600;margin-top:2px">${pd.client_name}</div>
+              ${pd.contact?`<div style="font-size:12px;color:#64748b;margin-top:2px">📞 ${pd.contact}</div>`:''}</div>`
+          :`<div style="color:#94a3b8;font-size:12px;margin-bottom:7px;font-style:italic">Available for booking</div>`}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          ${pd.plot_size?`<div><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Area</div><div style="font-size:13px;font-weight:700;margin-top:2px">${pd.plot_size} sqft</div></div>`:''}
+          ${pd.agreement_value?`<div><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Value</div><div style="font-size:13px;font-weight:700;margin-top:2px">${fmt(pd.agreement_value)}</div></div>`:''}
+        </div>
+        <div style="margin-top:9px;font-size:10px;color:#b0bac4;text-align:center">Click for full booking details →</div>`;
+    } else {
+      if(hoveredMesh){hoveredMesh.position.y=hoveredMesh.userData.baseY;hoveredMesh=null;dom.style.cursor='grab';}
+      tip.style.display='none';
+    }
+  });
+  dom.addEventListener('mouseleave',()=>{
+    tip.style.display='none';
+    if(hoveredMesh){hoveredMesh.position.y=hoveredMesh.userData.baseY;hoveredMesh=null;}
+  });
+  dom.addEventListener('click', e => {
+    if(Math.abs(e.movementX)+Math.abs(e.movementY)>5) return;
+    const rect=dom.getBoundingClientRect();
+    mouse.x=((e.clientX-rect.left)/rect.width)*2-1;
+    mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
+    raycaster.setFromCamera(mouse, camera);
+    const hits=raycaster.intersectObjects(plotMeshes);
+    if(hits.length){
       const pd=hits[0].object.userData.data;
       const bk=S.bookings.find(b=>parseInt(b.plot_no)===pd.plot_no);
       const pv=S.prev.find(x=>parseInt(x.plot_no)===pd.plot_no);
@@ -1956,29 +2051,66 @@ function init3DPlotMap(container, plotData, startPlot, totalPlots) {
   });
 
   // ── RESIZE ────────────────────────────────────────────────────
-  const ro = new ResizeObserver(() => {
-    const w=container.clientWidth, h=container.clientHeight||600;
-    renderer.setSize(w, h);
-    camera.aspect = w/h;
-    camera.updateProjectionMatrix();
+  const ro=new ResizeObserver(()=>{
+    const w=container.clientWidth,h=container.clientHeight||620;
+    renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();
   });
   ro.observe(container);
 
   // ── ANIMATE ───────────────────────────────────────────────────
   let animId;
-  const animate = () => { animId=requestAnimationFrame(animate); renderer.render(scene,camera); };
+  const animate=()=>{animId=requestAnimationFrame(animate);renderer.render(scene,camera);};
   animate();
-
-  container._cleanup = () => {
-    cancelAnimationFrame(animId);
-    ro.disconnect();
-    renderer.dispose();
-    plotMeshes.forEach(m => { m.geometry.dispose(); m.material.forEach?.(mt=>mt.dispose()); });
-    window.removeEventListener('mouseup',()=>{});
-    window.removeEventListener('mousemove',()=>{});
+  container._cleanup=()=>{
+    cancelAnimationFrame(animId); ro.disconnect(); renderer.dispose();
+    plotMeshes.forEach(m=>{m.geometry.dispose();Array.isArray(m.material)&&m.material.forEach(mt=>mt.dispose());});
   };
 }
 
+
+function openPlotDetail(plotNo, status, bk, pv) {
+  const cfg = PLOT_STATUS[status] || PLOT_STATUS.available;
+  el('pdTitle').textContent = 'Plot ' + plotNo;
+  el('pdSub').innerHTML = `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 12px;border-radius:12px;background:${cfg.bg};border:1px solid ${cfg.border};color:${cfg.text};font-size:12px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:${cfg.color}"></span>${cfg.label}</span>`;
+
+  const fmt = n => n ? '₹' + (+n).toLocaleString('en-IN') : '—';
+  if (status === 'available') {
+    el('pdBody').innerHTML = `<div style="text-align:center;padding:28px 0">
+      <div style="font-size:44px;margin-bottom:12px">✅</div>
+      <div style="font-size:18px;font-weight:700;color:var(--sage);margin-bottom:6px">Available for Booking</div>
+      <div style="font-size:13px;color:var(--inkf)">This plot has not been booked yet</div></div>`;
+    el('pdFoot').innerHTML = `<button class="btn btn-outline" onclick="closeM('plotDetailModal')">Close</button>
+      <button class="btn btn-gold" onclick="closeM('plotDetailModal');openBkModal({plot_no:'${plotNo}'})">+ Book This Plot</button>`;
+  } else {
+    const data = bk || pv;
+    const isPrev = !bk && !!pv;
+    const rows = [
+      ['Client Name',  data?.client_name || '—'],
+      ['Plot Size',    data?.plot_size ? data.plot_size + ' sqft' : '—'],
+      ['Agr. Value',   fmt(data?.agreement_value)],
+    ];
+    if (!isPrev) {
+      rows.push(
+        ['Basic Rate',    data?.basic_rate ? '₹' + data.basic_rate + '/sqft' : '—'],
+        ['Bank',          data?.bank_name || '—'],
+        ['Loan Status',   data?.loan_status || '—'],
+        ['Sanction',      data?.sanction_received || '—'],
+        ['Disbursement',  data?.disbursement_status === 'done' ? '✓ Done' : 'Pending'],
+        ['Contact',       data?.contact || '—'],
+        ['Banker',        data?.banker_contact || '—'],
+      );
+      if (data?.remark) rows.push(['Remark', data.remark]);
+    }
+    el('pdBody').innerHTML = rows.map(([l,v]) =>
+      `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--border)">
+        <div style="font-size:12px;color:var(--inkf);font-weight:500;flex-shrink:0;margin-right:12px">${l}</div>
+        <div style="font-size:13px;font-weight:600;text-align:right;max-width:60%">${esc(String(v||'—'))}</div></div>`
+    ).join('');
+    el('pdFoot').innerHTML = `<button class="btn btn-outline" onclick="closeM('plotDetailModal')">Close</button>
+      ${bk ? `<button class="btn btn-gold" onclick="closeM('plotDetailModal');editBk('${bk.id}')">✏ Edit Booking</button>` : ''}`;
+  }
+  openM('plotDetailModal');
+}
 
 function openPlotFilter() { openM('plotFilterModal'); }
 function applyPlotFilter() {

@@ -440,31 +440,31 @@ notes</code>
       <div class="ph">
         <div>
           <h1 id="plotMapTitle">Plot Map — 3D View</h1>
-          <p id="plotMapSub">Drag to rotate · Scroll to zoom · Hover for details · Click for full info</p>
+          <p id="plotMapSub">Drag to rotate · Scroll to zoom · Hover for details · Click to book</p>
         </div>
-        <div class="ph-r" style="gap:8px">
-          <button class="btn btn-outline btn-sm" onclick="renderPlotMap()" title="Reset camera">↺ Reset View</button>
+        <div class="ph-r">
+          <button class="btn btn-outline btn-sm" onclick="renderPlotMap()">↺ Reset View</button>
         </div>
       </div>
-      <!-- Legend -->
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center">
-        <div class="plot-legend-item" style="background:#fff;border:1.5px solid #cbd5e1"><span class="plot-legend-dot" style="background:#94a3b8"></span>Available</div>
-        <div class="plot-legend-item" style="background:#fef3c7;border:1.5px solid #d97706"><span class="plot-legend-dot" style="background:#f59e0b"></span>Booked / Processing</div>
-        <div class="plot-legend-item" style="background:#dbeafe;border:1.5px solid #1d4ed8"><span class="plot-legend-dot" style="background:#3b82f6"></span>Sanction Received</div>
-        <div class="plot-legend-item" style="background:#d1fae5;border:1.5px solid #065f46"><span class="plot-legend-dot" style="background:#059669"></span>Agreement Completed</div>
-        <div class="plot-legend-item" style="background:#f3e8ff;border:1.5px solid #7e22ce"><span class="plot-legend-dot" style="background:#a855f7"></span>Previous Team</div>
-        <div class="plot-legend-item" style="background:#f1f5f9;border:1.5px solid #475569"><span class="plot-legend-dot" style="background:#6b7280"></span>Phase 2</div>
+      <!-- Legend - single row -->
+      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px;align-items:center">
+        <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:20px;background:#fff;border:1.5px solid #cbd5e1;white-space:nowrap"><span style="width:8px;height:8px;border-radius:50%;background:#94a3b8"></span><span style="font-size:12px;font-weight:600;color:#475569">Available</span></span>
+        <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:20px;background:#fef3c7;border:1.5px solid #d97706;white-space:nowrap"><span style="width:8px;height:8px;border-radius:50%;background:#f59e0b"></span><span style="font-size:12px;font-weight:600;color:#92400e">Booked / Processing</span></span>
+        <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:20px;background:#dbeafe;border:1.5px solid #1d4ed8;white-space:nowrap"><span style="width:8px;height:8px;border-radius:50%;background:#3b82f6"></span><span style="font-size:12px;font-weight:600;color:#1e40af">Sanction Received</span></span>
+        <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:20px;background:#d1fae5;border:1.5px solid #065f46;white-space:nowrap"><span style="width:8px;height:8px;border-radius:50%;background:#059669"></span><span style="font-size:12px;font-weight:600;color:#064e3b">Agreement Completed</span></span>
+        <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:20px;background:#f3e8ff;border:1.5px solid #7e22ce;white-space:nowrap"><span style="width:8px;height:8px;border-radius:50%;background:#a855f7"></span><span style="font-size:12px;font-weight:600;color:#6b21a8">Previous Team</span></span>
+        <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:20px;background:#f1f5f9;border:1.5px solid #475569;white-space:nowrap"><span style="width:8px;height:8px;border-radius:50%;background:#6b7280"></span><span style="font-size:12px;font-weight:600;color:#374151">Phase 2</span></span>
       </div>
-      <!-- Summary bar -->
-      <div id="plotSummaryBar" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
-      <!-- 3D Canvas Container -->
+      <!-- Summary counts - single row -->
+      <div id="plotSummaryBar" style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px;align-items:center"></div>
+      <!-- 3D Canvas -->
       <div class="card" style="padding:0;overflow:hidden;border-radius:14px">
-        <div id="plot3dContainer" style="width:100%;height:600px;background:#f8f5f0;cursor:grab"></div>
+        <div id="plot3dContainer" style="width:100%;height:650px;background:#eae6df;cursor:grab"></div>
       </div>
-      <p style="text-align:center;font-size:11px;color:var(--inkf);margin-top:8px">🖱 Drag to rotate · Scroll to zoom · Click any plot to view booking details</p>
+      <p style="text-align:center;font-size:11px;color:var(--inkf);margin-top:7px">🖱 Drag to rotate · Scroll to zoom · Click any plot to view/book</p>
     </div>
 
-    <!-- DASHBOARD -->
+        <!-- DASHBOARD -->
     <div class="page" id="p-dash">
       <div class="ph">
         <div><h1 id="dashTitle">Dashboard</h1><p id="dashSub">Project overview</p></div>

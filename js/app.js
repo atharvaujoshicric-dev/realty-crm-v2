@@ -1634,12 +1634,12 @@ function renderPlotMap() {
 
 function init3DPlotMap(container, plotData) {
   if (typeof THREE === 'undefined') {
-    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:#64748b"><div class="spin spin-dk"></div><p style="margin:0">Loading 3D engine…</p></div>';
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-    script.onload = () => init3DPlotMap(container, plotData);
-    script.onerror = () => { container.innerHTML = '<div style="padding:40px;text-align:center;color:#ef4444">Failed to load 3D library. Check internet.</div>'; };
-    document.head.appendChild(script);
+    // Three.js should be loaded in <head>; retry once after short delay
+    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:#64748b"><div class="spin spin-dk"></div><p style="margin:0">Initialising 3D…</p></div>';
+    setTimeout(() => {
+      if (typeof THREE !== 'undefined') init3DPlotMap(container, plotData);
+      else container.innerHTML = '<div style="padding:40px;text-align:center;color:#ef4444;font-size:14px">⚠️ 3D library failed to load.<br><small>Check internet connection and refresh the page.</small></div>';
+    }, 1200);
     return;
   }
 

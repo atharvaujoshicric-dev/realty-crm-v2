@@ -1560,12 +1560,12 @@ function dlAuditCSV(mode) {
 const PM = { filter: { num: '', status: '' } };
 
 const PLOT_STATUS = {
-  available: { label:'Available',           color:'#22c55e', bg:'#dcfce7', border:'#16a34a', text:'#15803d' },
-  booked:    { label:'Booked / Processing', color:'#f59e0b', bg:'#fef3c7', border:'#d97706', text:'#92400e' },
-  sanction:  { label:'Sanction Received',   color:'#3b82f6', bg:'#dbeafe', border:'#1d4ed8', text:'#1e40af' },
-  completed: { label:'Agreement Completed', color:'#16a34a', bg:'#bbf7d0', border:'#15803d', text:'#14532d' },
-  prev:      { label:'Previous Team',       color:'#a855f7', bg:'#f3e8ff', border:'#7e22ce', text:'#6b21a8' },
-  phase2:    { label:'Phase 2',             color:'#6b7280', bg:'#f3f4f6', border:'#4b5563', text:'#374151' },
+  available: { label:'Available',           color:'#94a3b8', bg:'#ffffff', border:'#cbd5e1', text:'#475569', top3d:'#ffffff', side3d:'#e2e8f0' },
+  booked:    { label:'Booked / Processing', color:'#f59e0b', bg:'#fef3c7', border:'#d97706', text:'#92400e', top3d:'#fde68a', side3d:'#ca8a04' },
+  sanction:  { label:'Sanction Received',   color:'#3b82f6', bg:'#dbeafe', border:'#1d4ed8', text:'#1e40af', top3d:'#93c5fd', side3d:'#1d4ed8' },
+  completed: { label:'Agreement Completed', color:'#059669', bg:'#d1fae5', border:'#065f46', text:'#064e3b', top3d:'#6ee7b7', side3d:'#065f46' },
+  prev:      { label:'Previous Team',       color:'#a855f7', bg:'#f3e8ff', border:'#7e22ce', text:'#6b21a8', top3d:'#d8b4fe', side3d:'#7e22ce' },
+  phase2:    { label:'Phase 2',             color:'#6b7280', bg:'#f1f5f9', border:'#475569', text:'#374151', top3d:'#cbd5e1', side3d:'#475569' },
 };
 
 function getPlotStatus(plotNo) {
@@ -1581,144 +1581,386 @@ function getPlotStatus(plotNo) {
 
 function renderPlotMap() {
   if (!S.curProj) return;
-  // Use total_plots from project settings, or derive from max plot number in bookings
-  const maxBkPlot = S.bookings.reduce((mx, b) => { const n = parseInt(b.plot_no); return n > mx ? n : mx; }, 0);
-  const maxPvPlot = S.prev.reduce((mx, p) => { const n = parseInt(p.plot_no); return n > mx ? n : mx; }, 0);
-  const derivedMax = Math.max(maxBkPlot, maxPvPlot, 1);
-  const totalPlots = S.curProj.total_plots || Math.ceil(derivedMax / 10) * 10 || 92;
-  el('plotMapTitle').textContent = S.curProj.name + ' — Plot Map';
-  el('plotMapSub').textContent   = totalPlots + ' plots total · click any plot to view details';
+  const totalPlots = S.curProj.total_plots || (()=>{
+    const maxBk = S.bookings.reduce((m,b)=>Math.max(m,parseInt(b.plot_no)||0),0);
+    const maxPv = S.prev.reduce((m,p)=>Math.max(m,parseInt(p.plot_no)||0),0);
+    return Math.ceil(Math.max(maxBk,maxPv,1)/10)*10||92;
+  })();
 
-  const counts = { available:0, booked:0, sanction:0, completed:0, prev:0, phase2:0 };
-  for (let i = 1; i <= totalPlots; i++) counts[getPlotStatus(i)]++;
+  // Build plot data payload for 3D renderer
+  const plotData = {};
+  for (let i = 1; i <= totalPlots; i++) {
+    const pn = i;
+    const bk = S.bookings.find(b => parseInt(b.plot_no) === pn);
+    const pv = S.prev.find(x => parseInt(x.plot_no) === pn);
+    let status = 'available';
+    if (pv) status = 'prev';
+    else if (bk) {
+      if (bk.loan_status === 'Agreement Completed') status = 'completed';
+      else if (bk.loan_status === 'Sanction Received') status = 'sanction';
+      else if (bk.bank_name === 'Phase 2') status = 'phase2';
+      else status = 'booked';
+    }
+    plotData[pn] = {
+      status,
+      plot_no: pn,
+      client_name:     bk?.client_name || pv?.client_name || '',
+      contact:         bk?.contact || '',
+      plot_size:       bk?.plot_size || pv?.plot_size || '',
+      agreement_value: bk?.agreement_value || pv?.agreement_value || '',
+      bank_name:       bk?.bank_name || '',
+      loan_status:     bk?.loan_status || status,
+    };
+  }
 
-  el('plotSummaryBar').innerHTML = Object.entries(counts).map(([st, cnt]) => {
-    if (!cnt) return '';
-    const cfg = PLOT_STATUS[st];
-    return '<div style="display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;background:' + cfg.bg + ';border:1.5px solid ' + cfg.border + '">'
-      + '<div style="width:10px;height:10px;border-radius:50%;background:' + cfg.color + '"></div>'
-      + '<span style="font-size:12px;font-weight:600;color:' + cfg.text + '">' + cfg.label + ': ' + cnt + '</span>'
-      + '</div>';
+  // Update summary bar
+  const counts = {};
+  Object.values(plotData).forEach(p => counts[p.status] = (counts[p.status]||0)+1);
+  const smBar = el('plotSummaryBar');
+  if (smBar) smBar.innerHTML = Object.entries(counts).map(([st,cnt])=>{
+    const cfg = PLOT_STATUS[st]; if(!cfg) return '';
+    return `<div style="display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;background:${cfg.bg};border:1.5px solid ${cfg.border}">
+      <div style="width:9px;height:9px;border-radius:50%;background:${cfg.color}"></div>
+      <span style="font-size:12px;font-weight:600;color:${cfg.text}">${cfg.label}: ${cnt}</span></div>`;
   }).join('');
 
-  drawPlotGrid(totalPlots);
+  // Render the 3D canvas inline using Three.js
+  const container = el('plot3dContainer');
+  if (!container) return;
+  container.innerHTML = '';
+
+  // Store data globally for the 3D renderer
+  window._plotData   = plotData;
+  window._totalPlots = totalPlots;
+  window._plotStatus = PLOT_STATUS;
+
+  init3DPlotMap(container, plotData, totalPlots);
 }
 
-function drawPlotGrid(totalPlots) {
-  const grid   = el('plotGrid');
-  const filter = PM.filter;
-  if (!grid) return;
-  grid.innerHTML = '';
-  const cols = Math.min(10, totalPlots);
-  grid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+function init3DPlotMap(container, plotData, totalPlots) {
+  if (typeof THREE === 'undefined') {
+    container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--inkf)"><div class="spin"></div><p style="margin-top:12px">Loading 3D engine…</p></div>';
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+    script.onload = () => init3DPlotMap(container, plotData, totalPlots);
+    document.head.appendChild(script);
+    return;
+  }
+
+  const COLS = 10;
+  const ROWS = Math.ceil(totalPlots / COLS);
+  const PLOT_W = 2.2, PLOT_D = 2.2, GAP = 0.25, ROAD_W = 1.2;
+
+  // Total grid size
+  const gridW = COLS * PLOT_W + (COLS-1) * GAP;
+  const gridD = ROWS * PLOT_D + (ROWS-1) * GAP;
+
+  // Scene
+  const scene    = new THREE.Scene();
+  scene.background = new THREE.Color(0xf8f5f0);
+  scene.fog = new THREE.Fog(0xf8f5f0, 40, 100);
+
+  // Camera - isometric-ish perspective
+  const aspect = container.clientWidth / container.clientHeight || 16/9;
+  const camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 200);
+  camera.position.set(gridW * 0.8, gridW * 0.9, gridD * 1.1);
+  camera.lookAt(gridW/2 - PLOT_W/2, 0, gridD/2 - PLOT_D/2);
+
+  // Renderer
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(container.clientWidth || 900, container.clientHeight || 560);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  container.appendChild(renderer.domElement);
+
+  // Lights
+  const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+  scene.add(ambient);
+  const sun = new THREE.DirectionalLight(0xfff5e0, 1.2);
+  sun.position.set(20, 30, 20);
+  sun.castShadow = true;
+  sun.shadow.mapSize.width = 2048;
+  sun.shadow.mapSize.height = 2048;
+  sun.shadow.camera.near = 0.5;
+  sun.shadow.camera.far = 150;
+  sun.shadow.camera.left = -40;
+  sun.shadow.camera.right = 40;
+  sun.shadow.camera.top = 40;
+  sun.shadow.camera.bottom = -40;
+  scene.add(sun);
+  const fill = new THREE.DirectionalLight(0xe0f0ff, 0.4);
+  fill.position.set(-10, 10, -10);
+  scene.add(fill);
+
+  // Ground plane
+  const groundGeo = new THREE.PlaneGeometry(gridW + 8, gridD + 8);
+  const groundMat = new THREE.MeshLambertMaterial({ color: 0xe8e4dc });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI/2;
+  ground.position.set(gridW/2 - PLOT_W/2, -0.01, gridD/2 - PLOT_D/2);
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  // Road strips between rows (every 5 rows add a road)
+  const roadMat = new THREE.MeshLambertMaterial({ color: 0xc8bfb0 });
+  for (let row = 4; row < ROWS; row += 5) {
+    const ry = row * (PLOT_D + GAP) + PLOT_D/2 + GAP/2;
+    const roadGeo = new THREE.PlaneGeometry(gridW + 4, ROAD_W);
+    const road = new THREE.Mesh(roadGeo, roadMat);
+    road.rotation.x = -Math.PI/2;
+    road.position.set(gridW/2 - PLOT_W/2, 0, ry);
+    road.receiveShadow = true;
+    scene.add(road);
+  }
+
+  // Plot meshes
+  const plotMeshes = [];
+  const plotHeights = {};
+  const PLOT_H = 0.35;
 
   for (let i = 1; i <= totalPlots; i++) {
-    const st  = getPlotStatus(i);
-    const cfg = PLOT_STATUS[st];
-    let hide  = false;
-    if (filter.num    && parseInt(filter.num)  !== i)  hide = true;
-    if (filter.status && filter.status          !== st) hide = true;
+    const pd  = plotData[i] || { status: 'available', plot_no: i };
+    const cfg = PLOT_STATUS[pd.status] || PLOT_STATUS.available;
+    const col = (i-1) % COLS;
+    const row = Math.floor((i-1) / COLS);
+    const x   = col * (PLOT_W + GAP);
+    const z   = row * (PLOT_D + GAP);
 
-    const bk = S.bookings.find(b => parseInt(b.plot_no) === i);
-    const pv = S.prev.find(x => parseInt(x.plot_no) === i);
+    // Height based on status (completed = tallest)
+    const h = pd.status === 'completed' ? PLOT_H * 2.5
+            : pd.status === 'booked'    ? PLOT_H * 1.8
+            : pd.status === 'sanction'  ? PLOT_H * 2.0
+            : pd.status === 'prev'      ? PLOT_H * 1.5
+            : pd.status === 'phase2'    ? PLOT_H * 1.2
+            : PLOT_H; // available = short
 
-    const cell = document.createElement('div');
-    cell.className = 'plot-cell';
-    cell.title     = 'Plot ' + i + ' — ' + cfg.label + (bk ? ' · ' + (bk.client_name||'') : '');
-    cell.style.cssText = [
-      'border-radius:8px',
-      'display:flex',
-      'flex-direction:column',
-      'align-items:center',
-      'justify-content:center',
-      'cursor:pointer',
-      'background:' + cfg.bg,
-      'border:2px solid ' + cfg.border,
-      'transition:transform .15s,box-shadow .15s',
-      'position:relative',
-      'min-height:48px',
-      'padding:4px 2px',
-      'opacity:' + (hide ? '0.12' : '1'),
-      'pointer-events:' + (hide ? 'none' : 'auto'),
-    ].join(';');
+    plotHeights[i] = h;
 
-    const bankLabel = bk ? (bk.bank_name||'') : (pv ? 'Prev' : '');
-    cell.innerHTML =
-      '<div style="font-size:clamp(9px,1.1vw,13px);font-weight:700;color:' + cfg.text + ';line-height:1.1">' + i + '</div>' +
-      (bankLabel ? '<div style="font-size:clamp(7px,0.75vw,9px);color:' + cfg.text + ';opacity:.65;margin-top:1px;text-align:center;max-width:90%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(bankLabel) + '</div>' : '');
+    // Box geometry
+    const geo = new THREE.BoxGeometry(PLOT_W - 0.08, h, PLOT_D - 0.08);
+    const topColor   = new THREE.Color(cfg.top3d || cfg.bg);
+    const sideColor  = new THREE.Color(cfg.side3d || cfg.border);
 
-    cell.onmouseover  = function() { this.style.transform='scale(1.1)'; this.style.boxShadow='0 4px 16px '+cfg.color+'55'; this.style.zIndex='10'; };
-    cell.onmouseleave = function() { this.style.transform=''; this.style.boxShadow=''; this.style.zIndex=''; };
-    cell.onclick      = function() { openPlotDetail(i, st, bk, pv); };
-    grid.appendChild(cell);
-  }
-}
-
-function openPlotDetail(plotNo, status, bk, pv) {
-  const cfg = PLOT_STATUS[status];
-  el('pdTitle').textContent = 'Plot ' + plotNo;
-  el('pdSub').innerHTML = '<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 12px;border-radius:12px;background:' + cfg.bg + ';border:1px solid ' + cfg.border + ';color:' + cfg.text + ';font-size:12px;font-weight:600">'
-    + '<span style="width:8px;height:8px;border-radius:50%;background:' + cfg.color + '"></span>'
-    + cfg.label + '</span>';
-
-  const fmt = function(n){ return n ? '\u20B9' + (+n).toLocaleString('en-IN') : '\u2014'; };
-
-  if (status === 'available') {
-    el('pdBody').innerHTML = '<div style="text-align:center;padding:28px 0">'
-      + '<div style="font-size:44px;margin-bottom:12px">\u2705</div>'
-      + '<div style="font-size:18px;font-weight:700;color:var(--sage);margin-bottom:6px">Available for Booking</div>'
-      + '<div style="font-size:13px;color:var(--inkf)">This plot has not been booked yet</div>'
-      + '</div>';
-    el('pdFoot').innerHTML = `<button class="btn btn-outline" onclick="closeM('plotDetailModal')">Close</button><button class="btn btn-gold" onclick="closeM('plotDetailModal');openBkModal({plot_no:'${plotNo}'})">+ Book This Plot</button>`;
-  } else {
-    const data  = bk || pv;
-    const isPrev = !bk && !!pv;
-    const detailRows = [
-      ['Client Name',   data ? (data.client_name||'\u2014') : '\u2014'],
-      ['Plot Size',     data && data.plot_size ? data.plot_size + ' sqft' : '\u2014'],
-      ['Agr. Value',    fmt(data && data.agreement_value)],
+    // Multi-material: top face bright, sides darker
+    const materials = [
+      new THREE.MeshLambertMaterial({ color: sideColor }),  // +x
+      new THREE.MeshLambertMaterial({ color: sideColor }),  // -x
+      new THREE.MeshLambertMaterial({ color: topColor  }),  // +y (top)
+      new THREE.MeshLambertMaterial({ color: sideColor }),  // -y (bottom)
+      new THREE.MeshLambertMaterial({ color: sideColor }),  // +z
+      new THREE.MeshLambertMaterial({ color: sideColor }),  // -z
     ];
-    if (!isPrev) {
-      detailRows.push(
-        ['Basic Rate',      data && data.basic_rate ? '\u20B9' + data.basic_rate + '/sqft' : '\u2014'],
-        ['Infra',           data && data.infra ? '\u20B9' + data.infra + '/sqft' : '\u2014'],
-        ['SDR',             fmt(data && data.sdr)],
-        ['Bank',            (data && data.bank_name) || '\u2014'],
-        ['Loan Status',     (data && data.loan_status) || '\u2014'],
-        ['Sanction',        (data && data.sanction_received) || '\u2014'],
-        ['Disbursement',    data && data.disbursement_status === 'done' ? '\u2713 Done' : 'Pending'],
-        ['Contact',         (data && data.contact) || '\u2014'],
-        ['Banker Contact',  (data && data.banker_contact) || '\u2014'],
-      );
-      if (data && data.remark) detailRows.push(['Remark', data.remark]);
-    }
-    el('pdBody').innerHTML = detailRows.map(function(r) {
-      return '<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--border)">'
-        + '<div style="font-size:12px;color:var(--inkf);font-weight:500;flex-shrink:0;margin-right:12px">' + r[0] + '</div>'
-        + '<div style="font-size:13px;font-weight:600;text-align:right;max-width:60%">' + esc(String(r[1]||'\u2014')) + '</div>'
-        + '</div>';
-    }).join('');
-    el('pdFoot').innerHTML = `<button class="btn btn-outline" onclick="closeM('plotDetailModal')">Close</button>${bk ? `<button class="btn btn-gold" onclick="closeM('plotDetailModal');editBk('${bk.id}')">✏ Edit Booking</button>` : ''}`;
+
+    const mesh = new THREE.Mesh(geo, materials);
+    mesh.position.set(x, h/2, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData = { plotNo: i, data: pd, origY: h/2, col, row, h };
+    scene.add(mesh);
+    plotMeshes.push(mesh);
+
+    // Plot number label (sprite)
+    const canvas2d = document.createElement('canvas');
+    canvas2d.width = 128; canvas2d.height = 64;
+    const ctx = canvas2d.getContext('2d');
+    ctx.clearRect(0,0,128,64);
+    ctx.font = 'bold 36px Arial';
+    ctx.fillStyle = cfg.text || '#374151';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(i), 64, 32);
+    const tex = new THREE.CanvasTexture(canvas2d);
+    const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.scale.set(0.9, 0.45, 1);
+    sprite.position.set(x, h + 0.35, z);
+    scene.add(sprite);
   }
-  openM('plotDetailModal');
+
+  // Raycaster for hover
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+  let hoveredMesh = null;
+  let hoveredOrig = null;
+
+  const tooltip = document.createElement('div');
+  tooltip.style.cssText = 'position:absolute;display:none;background:white;border-radius:10px;padding:12px 16px;box-shadow:0 8px 32px rgba(0,0,0,0.18);border:1px solid #e2e8f0;font-family:Outfit,sans-serif;font-size:13px;min-width:200px;pointer-events:none;z-index:999;';
+  container.style.position = 'relative';
+  container.appendChild(tooltip);
+
+  renderer.domElement.addEventListener('mousemove', e => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(plotMeshes);
+
+    if (hits.length > 0) {
+      const hit = hits[0].object;
+      if (hit !== hoveredMesh) {
+        // Restore previous
+        if (hoveredMesh && hoveredOrig !== null) {
+          hoveredMesh.position.y = hoveredOrig;
+        }
+        hoveredMesh = hit;
+        hoveredOrig = hit.position.y;
+        hit.position.y = hoveredOrig + 0.4;
+      }
+      // Show tooltip
+      const pd = hit.userData.data;
+      const cfg = PLOT_STATUS[pd.status] || PLOT_STATUS.available;
+      const fmt = n => n ? '₹' + (+n).toLocaleString('en-IN') : '—';
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX - rect.left + 16) + 'px';
+      tooltip.style.top  = (e.clientY - rect.top  - 10) + 'px';
+      tooltip.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px;padding-bottom:8px;border-bottom:1px solid #f1f5f9">
+          <div style="width:10px;height:10px;border-radius:50%;background:${cfg.color};flex-shrink:0"></div>
+          <div style="font-weight:700;font-size:14px">Plot ${pd.plot_no}</div>
+          <div style="margin-left:auto;font-size:11px;padding:2px 8px;border-radius:10px;background:${cfg.bg};color:${cfg.text};font-weight:600;border:1px solid ${cfg.border}">${cfg.label}</div>
+        </div>
+        ${pd.client_name ? `<div style="margin-bottom:5px"><span style="color:#94a3b8;font-size:11px">CLIENT</span><br><span style="font-weight:600">${pd.client_name}</span></div>` : '<div style="color:#94a3b8;font-size:12px;margin-bottom:5px">Available for booking</div>'}
+        ${pd.contact ? `<div style="margin-bottom:5px;font-size:12px;color:#64748b">📞 ${pd.contact}</div>` : ''}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">
+          ${pd.plot_size ? `<div><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Area</div><div style="font-weight:600;font-size:12px">${pd.plot_size} sqft</div></div>` : ''}
+          ${pd.agreement_value ? `<div><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Value</div><div style="font-weight:600;font-size:12px">${fmt(pd.agreement_value)}</div></div>` : ''}
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:#94a3b8;text-align:right">Click to view full details →</div>`;
+      renderer.domElement.style.cursor = 'pointer';
+    } else {
+      if (hoveredMesh && hoveredOrig !== null) {
+        hoveredMesh.position.y = hoveredOrig;
+        hoveredMesh = null; hoveredOrig = null;
+      }
+      tooltip.style.display = 'none';
+      renderer.domElement.style.cursor = 'grab';
+    }
+  });
+
+  renderer.domElement.addEventListener('mouseleave', () => {
+    tooltip.style.display = 'none';
+    if (hoveredMesh && hoveredOrig !== null) {
+      hoveredMesh.position.y = hoveredOrig;
+      hoveredMesh = null; hoveredOrig = null;
+    }
+  });
+
+  // Click to open detail modal
+  renderer.domElement.addEventListener('click', e => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(plotMeshes);
+    if (hits.length > 0) {
+      const pd = hits[0].object.userData.data;
+      const bk = S.bookings.find(b => parseInt(b.plot_no) === pd.plot_no);
+      const pv = S.prev.find(x => parseInt(x.plot_no) === pd.plot_no);
+      openPlotDetail(pd.plot_no, pd.status, bk, pv);
+    }
+  });
+
+  // Orbit controls (manual — no OrbitControls import needed)
+  let isDragging = false, lastX = 0, lastY = 0;
+  let theta = 0.6, phi = 0.9, radius = Math.max(gridW, gridD) * 1.4;
+  const center = new THREE.Vector3(gridW/2 - PLOT_W/2, 0, gridD/2 - PLOT_D/2);
+
+  function updateCamera() {
+    camera.position.x = center.x + radius * Math.sin(phi) * Math.sin(theta);
+    camera.position.y = center.y + radius * Math.cos(phi);
+    camera.position.z = center.z + radius * Math.sin(phi) * Math.cos(theta);
+    camera.lookAt(center);
+  }
+  updateCamera();
+
+  renderer.domElement.addEventListener('mousedown', e => {
+    isDragging = true; lastX = e.clientX; lastY = e.clientY;
+    renderer.domElement.style.cursor = 'grabbing';
+  });
+  window.addEventListener('mouseup', () => {
+    isDragging = false;
+    renderer.domElement.style.cursor = 'grab';
+  });
+  window.addEventListener('mousemove', e => {
+    if (!isDragging) return;
+    const dx = (e.clientX - lastX) * 0.008;
+    const dy = (e.clientY - lastY) * 0.008;
+    theta -= dx;
+    phi = Math.max(0.2, Math.min(1.4, phi + dy));
+    lastX = e.clientX; lastY = e.clientY;
+    updateCamera();
+  });
+  renderer.domElement.addEventListener('wheel', e => {
+    e.preventDefault();
+    radius = Math.max(5, Math.min(60, radius + e.deltaY * 0.04));
+    updateCamera();
+  }, { passive: false });
+
+  // Touch support
+  let lastTouch = null, lastPinchDist = 0;
+  renderer.domElement.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) { lastTouch = e.touches[0]; isDragging = true; }
+    if (e.touches.length === 2) { const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY; lastPinchDist=Math.sqrt(dx*dx+dy*dy); }
+  });
+  renderer.domElement.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (e.touches.length === 1 && isDragging && lastTouch) {
+      const dx = (e.touches[0].clientX - lastTouch.clientX) * 0.01;
+      const dy = (e.touches[0].clientY - lastTouch.clientY) * 0.01;
+      theta -= dx; phi = Math.max(0.2, Math.min(1.4, phi + dy));
+      lastTouch = e.touches[0]; updateCamera();
+    }
+    if (e.touches.length === 2) {
+      const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      radius = Math.max(5, Math.min(60, radius - (d-lastPinchDist)*0.05));
+      lastPinchDist=d; updateCamera();
+    }
+  }, {passive:false});
+  renderer.domElement.addEventListener('touchend', () => { isDragging=false; lastTouch=null; });
+
+  // Resize handler
+  const ro = new ResizeObserver(() => {
+    const w = container.clientWidth, h = container.clientHeight || 560;
+    renderer.setSize(w, h);
+    camera.aspect = w/h;
+    camera.updateProjectionMatrix();
+  });
+  ro.observe(container);
+
+  // Animation loop
+  let animId;
+  function animate() {
+    animId = requestAnimationFrame(animate);
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  // Cleanup when navigating away
+  container._cleanup = () => {
+    cancelAnimationFrame(animId);
+    ro.disconnect();
+    renderer.dispose();
+    scene.clear();
+  };
 }
 
-function openPlotFilter()  { openM('plotFilterModal'); }
-
+function openPlotFilter() { openM('plotFilterModal'); }
 function applyPlotFilter() {
-  PM.filter.num    = (el('pf-num')?.value    || '').trim();
+  PM.filter.num    = (el('pf-num')?.value || '').trim();
   PM.filter.status = (el('pf-status')?.value || '').trim();
   closeM('plotFilterModal');
-  drawPlotGrid(S.curProj?.total_plots || 92);
+  renderPlotMap();
 }
-
 function resetPlotFilter() {
   PM.filter = { num:'', status:'' };
-  if (el('pf-num'))    el('pf-num').value    = '';
-  if (el('pf-status')) el('pf-status').value = '';
+  if(el('pf-num'))    el('pf-num').value='';
+  if(el('pf-status')) el('pf-status').value='';
   closeM('plotFilterModal');
-  if (S.curProj) renderPlotMap();
+  if(S.curProj) renderPlotMap();
 }
+
 
 // ── IMPORT SYSTEM ────────────────────────────────────────────
 const IMP = { wb: null, projId: '', parsed: {}, role: '' };

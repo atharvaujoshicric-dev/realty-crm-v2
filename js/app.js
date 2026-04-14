@@ -1223,9 +1223,40 @@ function calcBk(){
   setF('f-sdr',   Math.round(sz*(rt+inf)*sdrRate));
 }
 
+
+function checkPlotAvailability(val) {
+  const warn = el('f-plot-warn');
+  if (!warn) return;
+  if (!val || !val.trim() || S.editBkId) { warn.style.display='none'; return; }
+  const pn = val.trim();
+  const dup = S.bookings.find(b => String(b.plot_no).trim() === pn && b.loan_status !== 'Cancelled');
+  const prevDup = S.prev.find(p => String(p.plot_no).trim() === pn);
+  if (dup) {
+    warn.textContent = '⚠️ Already booked by ' + esc(dup.client_name);
+    warn.style.display = 'block';
+    el('bk-save').disabled = true;
+  } else if (prevDup) {
+    warn.textContent = '⚠️ Previous team booking — ' + esc(prevDup.client_name);
+    warn.style.display = 'block';
+    el('bk-save').disabled = true;
+  } else {
+    warn.style.display = 'none';
+    el('bk-save').disabled = false;
+  }
+}
 async function saveBk(){
   const name=v('f-name').trim(); if(!name){toast('Client name required','err');return;}
   const gv=id=>{const e=el(id);return e?e.value:'';};
+  // Block duplicate plot booking (only for NEW bookings, not edits)
+  if (!S.editBkId) {
+    const plotNo = gv('f-plot').trim();
+    if (plotNo) {
+      const dup = S.bookings.find(b => String(b.plot_no).trim() === plotNo && b.loan_status !== 'Cancelled');
+      const prevDup = S.prev.find(p => String(p.plot_no).trim() === plotNo);
+      if (dup) { toast(`Plot ${plotNo} is already booked by ${dup.client_name}`, 'err'); return; }
+      if (prevDup) { toast(`Plot ${plotNo} was booked by previous team (${prevDup.client_name})`, 'err'); return; }
+    }
+  }
   const gn=id=>{const n=parseFloat(gv(id));return isNaN(n)?null:n;};
   const data={
     project_id:S.curProj.id,
@@ -1715,101 +1746,115 @@ function drawIsometricMap(plotData) {
   const container = el('plot3dContainer');
   if (!container) return;
 
-  // Unit sizes in px
-  const U = 46;  // base unit
-  const ROAD_GAP = 32;
-  const COL_GAP  = 4;
+  const U    = 44;   // base unit px
+  const ROAD = 28;   // road gap px
+  const GAP  = 3;    // gap between plots
 
-  // Build column X positions
-  const COL_ROAD_AFTER = new Set([7, 11, 15]); // road after these cols
+  // Build column X positions with road gaps
+  const ROAD_AFTER = new Set([7,11,15]);
   const COL_X = {};
   let xAcc = 0;
-  const allCols = [...new Set(PLOT_LAYOUT.map(p => p[1]))].sort((a,b) => a-b);
-  let prevCol = -1;
+  const allCols = [...new Set(PLOT_LAYOUT.map(p=>p[1]))].sort((a,b)=>a-b);
+  let prev = -1;
   allCols.forEach(col => {
-    if (prevCol >= 0) {
-      xAcc += COL_ROAD_AFTER.has(prevCol) ? ROAD_GAP + COL_GAP : COL_GAP;
-    }
+    if (prev >= 0) xAcc += ROAD_AFTER.has(prev) ? U + ROAD : U + GAP;
     COL_X[col] = xAcc;
-    xAcc += U;
-    prevCol = col;
+    prev = col;
   });
 
-  const totalW = xAcc + U + 40;
-  const totalH = 10 * (U + COL_GAP) + 80;
-
-  // Filter
-  const filterNum    = PM.filter.num ? parseInt(PM.filter.num) : null;
+  const filterNum    = PM.filter.num    ? parseInt(PM.filter.num)    : null;
   const filterSt     = PM.filter.status || null;
   const filterClient = PM.filter.clientSearch || null;
 
-  let html = `<div style="position:relative;width:${totalW}px;min-height:${totalH}px;padding:20px 20px 40px;">`;
+  const totalW = Math.max(...Object.values(COL_X)) + U + 60;
+  const totalH = 10 * (U + GAP) + 60;
 
-  // Road strips between blocks
-  COL_ROAD_AFTER.forEach(col => {
-    if (COL_X[col] === undefined) return;
-    const rx = COL_X[col] + U + COL_GAP/2;
-    html += `<div style="position:absolute;left:${rx+20}px;top:16px;width:${ROAD_GAP-COL_GAP}px;height:${totalH-20}px;background:#c8c2b8;border-radius:4px;z-index:0">
-      <div style="position:absolute;left:50%;top:0;bottom:0;width:2px;background:repeating-linear-gradient(to bottom,#f5edd8 0,#f5edd8 12px,transparent 12px,transparent 22px);transform:translateX(-50%)"></div>
+  let html = `<div style="position:relative;width:${totalW}px;min-height:${totalH}px;padding:24px 28px 44px;box-sizing:border-box">`;
+
+  // ── Road strips ───────────────────────────────────────────────
+  ROAD_AFTER.forEach(col => {
+    const rx = (COL_X[col]||0) + U + GAP/2 + 28;
+    html += `<div style="position:absolute;left:${rx}px;top:20px;width:${ROAD-4}px;height:${totalH}px;background:#c9c3b8;border-radius:5px;z-index:0">
+      <div style="position:absolute;left:50%;top:0;bottom:0;width:2px;background:repeating-linear-gradient(to bottom,#ede7d5 0,#ede7d5 10px,transparent 10px,transparent 20px);transform:translateX(-50%)"></div>
     </div>`;
   });
 
-  // Plot blocks
+  // ── Plot blocks ───────────────────────────────────────────────
   PLOT_LAYOUT.forEach(([pn, col, row, ws, ds]) => {
     const pd  = plotData[pn];
     if (!pd) return;
     const cfg = PLOT_STATUS[pd.status] || PLOT_STATUS.available;
 
     const clientMatch = filterClient ? (pd.client_name||'').toLowerCase().includes(filterClient) : true;
-    const dim = filterNum   ? (filterNum === pn ? 1 : 0.15)
-              : filterSt    ? (filterSt   === pd.status ? 1 : 0.15)
-              : filterClient? (clientMatch ? 1 : 0.15)
+    const dim = filterNum    ? (filterNum  === pn         ? 1 : 0.12)
+              : filterSt     ? (filterSt   === pd.status  ? 1 : 0.12)
+              : filterClient ? (clientMatch               ? 1 : 0.12)
               : 1;
 
-    const x = (COL_X[col] || 0) + 20;
-    const y = row * (U + COL_GAP) + 20;
-    const w = Math.round(U * (ws||1) - COL_GAP);
-    const h = Math.round(U * (ds||1) * 0.55 - COL_GAP);
+    const x  = (COL_X[col]||0) + 28;
+    const y  = row * (U + GAP) + 24;
+    const pw = Math.round(U * (ws||1) + (ws>1?(ws-1)*GAP:0) - GAP);
+    const ph = Math.round(U * 0.52);  // top face height
 
-    // Height of the 3D block (taller = more important/booked)
-    const blockH = pd.status === 'completed' ? 20
-                 : pd.status === 'booked'    ? 14
-                 : pd.status === 'sanction'  ? 17
-                 : pd.status === 'prev'      ? 11
-                 : 6;
+    // 3D depth — taller blocks for more important statuses
+    const depth = pd.status === 'completed' ? 18
+                : pd.status === 'sanction'  ? 14
+                : pd.status === 'booked'    ? 11
+                : pd.status === 'prev'      ? 9
+                : pd.status === 'phase2'    ? 7
+                : 4;
 
-    // CSS isometric box using pseudo-elements via inline divs
     const topC  = cfg.top3d  || cfg.bg;
     const sideC = cfg.side3d || cfg.border;
-    const darkC = darkenHex(sideC, 20);
+    const darkC = darkenHex(sideC, 25);
 
-    html += `<div class="iso-plot" 
-      data-pn="${pn}"
-      title="Plot ${pn}"
-      style="position:absolute;left:${x}px;top:${y}px;width:${w}px;cursor:pointer;opacity:${dim};transition:opacity .2s,transform .15s;"
+    // Font size scales with plot width
+    const fs = pw > 50 ? 12 : pw > 36 ? 10 : 8;
+
+    html += `<div style="position:absolute;left:${x}px;top:${y}px;width:${pw}px;opacity:${dim};transition:opacity .18s,transform .12s;cursor:pointer;z-index:${10-row}"
       onmouseenter="plotHover(this,${pn},true)"
       onmouseleave="plotHover(this,${pn},false)"
       onclick="plotClick(${pn})">
-      <!-- Top face -->
-      <div style="position:relative;width:${w}px;height:${h}px;background:${topC};border:1.5px solid ${sideC};border-radius:3px 3px 0 0;display:flex;align-items:center;justify-content:center;z-index:3;box-shadow:inset 0 1px 2px rgba(255,255,255,.4)">
-        <span style="font-size:${w>42?12:w>30?10:9}px;font-weight:700;color:${cfg.text||'#374151'};user-select:none;text-align:center;line-height:1.1">${pn}</span>
+      <!-- TOP FACE -->
+      <div style="width:${pw}px;height:${ph}px;
+        background:linear-gradient(135deg,${lightenHex(topC,12)} 0%,${topC} 60%,${darkenHex(topC,8)} 100%);
+        border:1.5px solid ${sideC};border-bottom:none;
+        border-radius:3px 3px 0 0;
+        box-shadow:inset 0 1px 3px rgba(255,255,255,.35);
+        display:flex;align-items:center;justify-content:center;position:relative;z-index:2">
+        <span style="font-size:${fs}px;font-weight:700;color:${cfg.text};user-select:none;text-align:center;line-height:1;letter-spacing:-.3px">${pn}</span>
+        ${pd.client_name && pw > 40 ? `<span style="position:absolute;bottom:2px;font-size:7px;color:${cfg.text};opacity:.65;max-width:90%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(pd.client_name.split(' ')[0])}</span>` : ''}
       </div>
-      <!-- Front face (3D depth) -->
-      <div style="width:${w}px;height:${blockH}px;background:linear-gradient(to bottom,${sideC},${darkC});border:1px solid ${darkC};border-top:none;border-radius:0 0 3px 3px;position:relative;z-index:2"></div>
+      <!-- FRONT FACE (depth/shadow) -->
+      <div style="width:${pw}px;height:${depth}px;
+        background:linear-gradient(to bottom,${sideC},${darkC});
+        border:1px solid ${darkC};border-top:none;
+        border-radius:0 0 3px 3px;
+        box-shadow:0 ${depth}px ${depth*2}px rgba(0,0,0,.12);
+        position:relative;z-index:1"></div>
     </div>`;
   });
 
   html += `</div>`;
-
-  // Tooltip div
   html += `<div id="plotTooltip" style="position:fixed;display:none;background:#fff;border-radius:12px;padding:14px 18px;box-shadow:0 8px 32px rgba(0,0,0,.16);border:1px solid #e2e8f0;font-family:Outfit,sans-serif;min-width:215px;max-width:280px;z-index:9999;pointer-events:none;"></div>`;
 
   container.style.overflowX = 'auto';
   container.style.overflowY = 'auto';
-  container.style.background = '#f0ede6';
-  container.style.cursor = 'default';
+  container.style.background = 'linear-gradient(145deg,#f0ede6,#e8e4dc)';
   container.innerHTML = html;
 }
+
+function lightenHex(hex, pct) {
+  hex = hex.replace('#','');
+  if (hex.length === 3) hex = hex.split('').map(c=>c+c).join('');
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return '#'+hex;
+  const num = parseInt(hex,16);
+  const r = Math.min(255,(num>>16)+pct);
+  const g = Math.min(255,((num>>8)&0xff)+pct);
+  const b = Math.min(255,(num&0xff)+pct);
+  return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+
 
 function darkenHex(hex, pct) {
   hex = hex.replace('#','');

@@ -723,7 +723,7 @@ notes</code>
         <div class="fg full"><label>Full Name *</label><input type="text" id="f-name"></div>
         <div class="fg full"><label>Contact Number</label><input type="text" id="f-contact"></div>
         <div class="fsec">Plot & Financials</div>
-        <div class="fg"><label>Plot No.</label><input type="text" id="f-plot"></div>
+        <div class="fg"><label>Plot No.</label><input type="text" id="f-plot" oninput="checkPlotAvailability(this.value)"><div id="f-plot-warn" style="font-size:11px;color:var(--rose);margin-top:3px;display:none"></div></div>
         <div class="fg"><label>Plot Size (sqft)</label><input type="number" id="f-size" oninput="calcBk()"></div>
         <div class="fg"><label>Basic Rate (₹/sqft)</label><input type="number" id="f-rate" oninput="calcBk()"></div>
         <div class="fg"><label>Infra (₹/sqft)</label><input type="number" id="f-infra" oninput="calcBk()"></div>

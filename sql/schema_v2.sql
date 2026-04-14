@@ -30,6 +30,3 @@ GRANT ALL ON public.audit_log TO anon, authenticated;
 -- ── ADD cancelled_at TO BOOKINGS ─────────────────────────────
 ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
 ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS cancelled_by TEXT DEFAULT '';
-
--- Add detail column if missing
-ALTER TABLE public.audit_log ADD COLUMN IF NOT EXISTS detail TEXT DEFAULT '';

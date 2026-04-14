@@ -872,7 +872,7 @@ function renderDash() {
 function renderBookings() {
   let d = [...S.bookings];
   const s=v('bk-s').toLowerCase(), bank=v('bk-bank'), sts=v('bk-sts'), dis=v('bk-dis');
-  if (s) d=d.filter(b=>b.client_name.toLowerCase().includes(s)||String(b.plot_no).includes(s)||(b.contact||'').includes(s));
+  if (s) d=d.filter(b=>(b.client_name||'').toLowerCase().includes(s)||String(b.plot_no).includes(s)||(b.contact||'').toLowerCase().includes(s)||(b.bank_name||'').toLowerCase().includes(s));
   if (bank) d=d.filter(b=>(b.bank_name||'').toLowerCase()===bank.toLowerCase());
   if (sts)  d=d.filter(b=>b.loan_status===sts);
   if (dis==='done')    d=d.filter(b=>b.disbursement_status==='done');
@@ -945,7 +945,7 @@ function renderPipeline() {
 function renderCheques() {
   let d = [...S.cheques];
   const s=v('chq-s').toLowerCase(), typ=v('chq-t');
-  if (s) d=d.filter(c=>c.cust_name.toLowerCase().includes(s)||(c.cheque_no||'').toLowerCase().includes(s));
+  if (s) d=d.filter(c=>(c.cust_name||'').toLowerCase().includes(s)||(c.cheque_no||'').toLowerCase().includes(s)||(c.plot_no||'').toLowerCase().includes(s)||(c.bank_detail||'').toLowerCase().includes(s));
   if (typ) d=d.filter(c=>c.entry_type===typ);
   const total=d.reduce((s,c)=>s+(+c.amount||0),0);
   const rpm=d.filter(c=>c.entry_type==='RPM').reduce((s,c)=>s+(+c.amount||0),0);
@@ -1163,6 +1163,17 @@ async function deleteCF(id){
 // ── BOOKING MODAL ────────────────────────────────────────────
 function openBkModal(bk) {
   // bk can be a full booking object OR {plot_no:'45'} from plot map
+  // Block if plot already booked (not editing, just new booking from plot map)
+  if (bk && !bk.id && bk.plot_no) {
+    const plotNo = String(bk.plot_no).trim();
+    const existing = S.bookings.find(b => String(b.plot_no).trim() === plotNo && b.loan_status !== 'Cancelled');
+    const prevExisting = S.prev.find(p => String(p.plot_no).trim() === plotNo);
+    if (existing || prevExisting) {
+      const who = existing?.client_name || prevExisting?.client_name || 'another customer';
+      toast(`Plot ${plotNo} is already booked by ${who}`, 'err');
+      return;
+    }
+  }
   const isPartial = bk && !bk.id;
   S.editBkId = bk?.id || null;
   el('bkMTitle').textContent = bk?.id ? 'Edit Booking' : 'New Booking';
@@ -1253,13 +1264,24 @@ async function saveBk(){
   setBtn('bk-save',false);
   if(error){toast(error.message,'err');return;}
   const isEdit = !!S.editBkId;
-  const savedId = isEdit ? S.editBkId : null;
+  const editId  = S.editBkId;
+  const oldBk   = isEdit ? S.bookings.find(b=>b.id===editId) : null;
   closeM('bkModal'); await loadProjData(); renderBookings();
   toast(isEdit?'Booking updated!':'Booking added!');
-  // Audit log
-  const saved = S.bookings.find(b => isEdit ? b.id===savedId : b.client_name===name);
-  await logAudit(isEdit?'UPDATE':'CREATE', 'booking', saved?.id||null, name,
-    isEdit ? `Updated booking for ${name} (Plot ${data.plot_no})` : `Created booking for ${name} (Plot ${data.plot_no}, ₹${(data.agreement_value||0).toLocaleString('en-IN')})`);
+  // Build changes object for audit
+  const changes = {};
+  if (isEdit && oldBk) {
+    ['loan_status','bank_name','disbursement_status','sanction_received','agreement_value','contact'].forEach(f=>{
+      if (String(oldBk[f]||'') !== String(data[f]||'')) changes[f]={old:oldBk[f]||'',new:data[f]||''};
+    });
+  }
+  const saved = S.bookings.find(b => isEdit ? b.id===editId : b.client_name===name);
+  await logAudit(
+    isEdit?'update':'create', 'booking', saved?.id||null,
+    `${name} — Plot ${data.plot_no}`,
+    isEdit ? `Updated Plot ${data.plot_no} (${name})` : `New booking — Plot ${data.plot_no}, ${name}, ₹${(data.agreement_value||0).toLocaleString('en-IN')}`,
+    Object.keys(changes).length ? changes : null
+  );
 }
 
 async function delBk(id){
@@ -1412,8 +1434,9 @@ async function logAudit(action, entity, entityId, entityLabel, detail, changes=n
       action:       action.toLowerCase(),
       entity,
       entity_id:    entityId || null,
-      entity_label: entityLabel || detail || '',
-      changes:      changes || {},
+      entity_label: entityLabel || '',
+      detail:       detail || entityLabel || '',
+      changes:      changes ? JSON.stringify(changes) : null,
     });
   } catch(e) { console.warn('Audit log failed:', e.message); }
 }
@@ -1528,7 +1551,10 @@ function renderAuditTable(logs, tbodyId, cntId, showProject) {
       <td><span class="role-pill rp-${log.user_role}" style="font-size:10px">${log.user_role||'—'}</span></td>
       <td><span style="padding:2px 9px;border-radius:12px;font-size:11px;font-weight:700;background:${bg};color:${color}">${(log.action||'').toUpperCase()}</span></td>
       <td class="td-dim" style="font-size:12px">${log.entity||'—'}</td>
-      <td style="font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(log.entity_label||'—')}</td>
+      <td style="font-size:12px;max-width:240px">
+        <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(log.entity_label||'—')}</div>
+        ${log.detail&&log.detail!==log.entity_label?`<div style="font-size:11px;color:var(--inkf);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(log.detail)}</div>`:''}
+      </td>
     </tr>`;
   }).join('');
 }
@@ -1651,10 +1677,10 @@ function init3DPlotMap(container, plotData) {
 }
 
 function _build3DScene(container, plotData) {
-  // ── EXACT LAYOUT FROM PDF MASTER PLAN ──────────────────────
+  // ── LAYOUT: exact positions from SOTR PDF master plan ────────
   // [plotNo, col, row, widthScale, depthScale]
   const LAYOUT = [
-    [4,0,0,1,0.8],[5,1,0,1,0.8],[6,2,0,1,0.8],[7,3,0,1,0.8],[8,4,0,1,0.8],[9,5,0,1,0.8],
+    [4,0,0,1,.8],[5,1,0,1,.8],[6,2,0,1,.8],[7,3,0,1,.8],[8,4,0,1,.8],[9,5,0,1,.8],
     [11,6,0,1,1.45],[12,6,1,1,1.45],[13,6,2,1,1.45],[14,6,3,1,1.45],[15,6,4,1,1.45],
     [16,6,5,1,1.45],[17,6,6,1,1.45],[18,6,7,1,1.45],[19,6,8,1,1.45],[20,6,9,1,1.45],
     [21,7,0,1,1.45],[22,7,1,1,1.45],[23,7,2,1,1.45],[24,7,3,1,1.45],[25,7,4,1,1.45],
@@ -1674,258 +1700,329 @@ function _build3DScene(container, plotData) {
     [88,18,0,1,1.15],[89,18,1,1,1.15],[90,18,2,1,1.15],[91,18,3,1,1.15],[92,18,4,1,1.15],
   ];
 
-  // ── DIMENSIONS & COLUMN X POSITIONS ──────────────────────────
-  const BW=2.0, BD=2.2, GAP=0.12, CGAP=0.15, ROAD=1.55;
-  const u = BW + CGAP;
-  const ROAD_AFTER = {7:true, 11:true, 15:true};
-  let xAcc=0, prevCol=-1;
+  // ── COLUMN X POSITIONS (with road gaps) ──────────────────────
+  const BW=46, BD=38, GAP=4, CGAP=5, ROAD=28;
+  const sortedCols = [...new Set(LAYOUT.map(e=>e[1]))].sort((a,b)=>a-b);
   const COL_X = {};
-  [...new Set(LAYOUT.map(e=>e[1]))].sort((a,b)=>a-b).forEach(col=>{
-    if(prevCol>=0){ xAcc += u + (ROAD_AFTER[prevCol] ? ROAD : (col-prevCol>1 ? ROAD : CGAP)); }
-    COL_X[col]=xAcc; prevCol=col;
+  let xAcc=0, prev=-1;
+  const ROAD_AFTER={7:1,11:1,15:1};
+  sortedCols.forEach(col=>{
+    if(prev>=0){ const g=ROAD_AFTER[prev]?ROAD:(col-prev>1?ROAD:CGAP); xAcc+=BW+g; }
+    COL_X[col]=xAcc; prev=col;
   });
   const colX = col => COL_X[col]||0;
   const rowZ = row => row*(BD+GAP);
   const gridW = Math.max(...Object.values(COL_X))+BW;
-  const gridD = 10*(BD+GAP);
+  const gridH = 10*(BD+GAP);
 
-  // ── RENDERER ──────────────────────────────────────────────────
-  const W=container.clientWidth||900, H=container.clientHeight||600;
-  const renderer = new THREE.WebGLRenderer({antialias:true, alpha:false});
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
-  renderer.setSize(W,H);
-  renderer.setClearColor(0xedeae3,1);
-  renderer.shadowMap.enabled=true;
-  container.appendChild(renderer.domElement);
+  // ── ISOMETRIC PROJECTION ─────────────────────────────────────
+  // Isometric: x' = (ix - iz)*cos30, y' = (ix + iz)*sin30 - iy
+  const ISO_ANG = Math.PI/6; // 30 degrees
+  const CX = Math.cos(ISO_ANG), SX = Math.sin(ISO_ANG);
 
-  // ── SCENE & CAMERA ────────────────────────────────────────────
-  const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0xedeae3, 60, 120);
-  const camera = new THREE.PerspectiveCamera(40, W/H, 0.1, 300);
-
-  // ── LIGHTS ────────────────────────────────────────────────────
-  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-  const sun = new THREE.DirectionalLight(0xfff8ea, 1.2);
-  sun.position.set(30,50,20);
-  sun.castShadow=true;
-  sun.shadow.mapSize.width=2048; sun.shadow.mapSize.height=2048;
-  sun.shadow.camera.left=-70; sun.shadow.camera.right=70;
-  sun.shadow.camera.top=70; sun.shadow.camera.bottom=-70;
-  sun.shadow.camera.near=0.5; sun.shadow.camera.far=250;
-  scene.add(sun);
-  const fill = new THREE.DirectionalLight(0xcce8ff, 0.28);
-  fill.position.set(-20,15,-10); scene.add(fill);
-
-  // ── GROUND ────────────────────────────────────────────────────
-  const gm = new THREE.MeshLambertMaterial({color:0xdbd5c8});
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(gridW+18,gridD+18), gm);
-  ground.rotation.x=-Math.PI/2;
-  ground.position.set(gridW/2,-0.02,gridD/2);
-  ground.receiveShadow=true;
-  scene.add(ground);
-
-  // ── ROADS ─────────────────────────────────────────────────────
-  const roadMat = new THREE.MeshLambertMaterial({color:0xc0b8ae});
-  const laneMat = new THREE.MeshLambertMaterial({color:0xf0e8d0});
-  [7,11,15].forEach(afterCol=>{
-    if(COL_X[afterCol]===undefined) return;
-    const rx=COL_X[afterCol]+BW+CGAP/2;
-    const rm=new THREE.Mesh(new THREE.PlaneGeometry(ROAD,gridD+8),roadMat);
-    rm.rotation.x=-Math.PI/2; rm.position.set(rx+ROAD/2,0,gridD/2);
-    rm.receiveShadow=true; scene.add(rm);
-    const lm=new THREE.Mesh(new THREE.PlaneGeometry(0.1,gridD+6),laneMat);
-    lm.rotation.x=-Math.PI/2; lm.position.set(rx+ROAD/2,0.01,gridD/2);
-    scene.add(lm);
-  });
-
-  // ── PLOTS: use TWO separate meshes (top + body) ───────────────
-  // Avoids multi-material array which causes the read-only error
-  const plotGroups = []; // {group, plotNo, data, baseY}
-
-  LAYOUT.forEach(([pn,col,row,ws,ds])=>{
-    const pd=plotData[pn]||{status:'available',plot_no:pn};
-    const cfg=PLOT_STATUS[pd.status]||PLOT_STATUS.available;
-    const x=colX(col);
-    const z=rowZ(row);
-    const pw=BW*(ws||1)-0.1;
-    const pde=BD*(ds||1)-0.1;
-    const h = pd.status==='completed'?0.90
-             :pd.status==='booked'   ?0.62
-             :pd.status==='sanction' ?0.76
-             :pd.status==='prev'     ?0.50
-             :pd.status==='phase2'   ?0.40
-             :0.20;
-
-    const cx=x+BW*(ws||1)/2-BW/2;
-    const cz=z+BD*(ds||1)/2-BD/2;
-
-    // Body (sides) - single material
-    const bodyMat=new THREE.MeshLambertMaterial({color:new THREE.Color(cfg.side3d||cfg.border)});
-    const bodyGeo=new THREE.BoxGeometry(pw,h,pde);
-    const body=new THREE.Mesh(bodyGeo,bodyMat);
-    body.position.set(cx,h/2,cz);
-    body.castShadow=true; body.receiveShadow=true;
-    scene.add(body);
-
-    // Top cap - single material, slightly inset
-    const topMat=new THREE.MeshLambertMaterial({color:new THREE.Color(cfg.top3d||cfg.bg)});
-    const topGeo=new THREE.BoxGeometry(pw-0.04,0.06,pde-0.04);
-    const top=new THREE.Mesh(topGeo,topMat);
-    top.position.set(cx,h+0.01,cz);
-    top.castShadow=true;
-    scene.add(top);
-
-    // Number label
-    const cv=document.createElement('canvas');
-    cv.width=128; cv.height=72;
-    const ctx=cv.getContext('2d');
-    ctx.font='bold 40px Arial';
-    ctx.fillStyle=cfg.text||'#374151';
-    ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText(String(pn),64,36);
-    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),transparent:true}));
-    sp.scale.set(BW*(ws||1)*0.8,0.55,1);
-    sp.position.set(cx,h+0.55,cz);
-    scene.add(sp);
-
-    // Group for raycasting - store both body and top
-    body.userData={plotNo:pn,data:pd,baseY:h/2,topMesh:top,topBaseY:h+0.01,spriteMesh:sp,spriteBaseY:h+0.55};
-    top.userData={plotNo:pn,data:pd,isTop:true,bodyMesh:body};
-    plotGroups.push(body);
-  });
-
-  // ── CAMERA ORBIT ──────────────────────────────────────────────
-  const center = new THREE.Vector3(gridW/2,0,gridD/2);
-  let theta=0.6, phi=0.82, radius=Math.max(gridW,gridD)*1.45;
-  let isDragging=false, wasDragging=false, lx=0, ly=0;
-
-  function updateCamera(){
-    const x=center.x+radius*Math.sin(phi)*Math.sin(theta);
-    const y=center.y+radius*Math.cos(phi);
-    const z2=center.z+radius*Math.sin(phi)*Math.cos(theta);
-    camera.position.set(x,y,z2);
-    camera.lookAt(center);
+  function iso(wx, wy, wz) {
+    return {
+      x: (wx - wz) * CX,
+      y: (wx + wz) * SX - wy
+    };
   }
-  updateCamera();
 
-  const dom=renderer.domElement;
-  dom.style.cursor='grab';
-  dom.addEventListener('mousedown',e=>{isDragging=true;wasDragging=false;lx=e.clientX;ly=e.clientY;dom.style.cursor='grabbing';});
-  window.addEventListener('mouseup',()=>{isDragging=false;dom.style.cursor='grab';});
-  window.addEventListener('mousemove',e=>{
-    if(!isDragging)return;
-    wasDragging=true;
-    theta-=(e.clientX-lx)*0.007;
-    phi=Math.max(0.15,Math.min(1.48,phi+(e.clientY-ly)*0.007));
-    lx=e.clientX;ly=e.clientY;updateCamera();
+  // ── CANVAS SETUP ─────────────────────────────────────────────
+  const canvas = document.createElement('canvas');
+  const W = container.clientWidth || 900;
+  const H = container.clientHeight || 620;
+  canvas.width  = W * window.devicePixelRatio;
+  canvas.height = H * window.devicePixelRatio;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  canvas.style.cursor = 'grab';
+  container.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+  // ── CAMERA STATE ─────────────────────────────────────────────
+  let camX = gridW/2, camZ = gridH/2;
+  let zoom = 1.0;
+  let panX = W/2, panY = H/2;
+  let isDragging=false, wasDragging=false, lastMX=0, lastMY=0;
+  let hoveredPlot = null;
+
+  // ── PRECOMPUTE PLOT RECTS ────────────────────────────────────
+  const plotRects = LAYOUT.map(([pn,col,row,ws,ds])=>{
+    const pd = plotData[pn]||{status:'available',plot_no:pn};
+    const cfg = PLOT_STATUS[pd.status]||PLOT_STATUS.available;
+    const x = colX(col), z = rowZ(row);
+    const pw = BW*(ws||1), pd2 = BD*(ds||1);
+    const H_BOX = pd.status==='completed'?24:pd.status==='booked'?18:pd.status==='sanction'?20:pd.status==='prev'?14:pd.status==='phase2'?10:6;
+    return { pn, pd, cfg, x, z, pw, pd:pd2, h:H_BOX };
   });
-  dom.addEventListener('wheel',e=>{e.preventDefault();radius=Math.max(8,Math.min(120,radius+e.deltaY*0.06));updateCamera();},{passive:false});
 
-  // Touch
-  let lt=null,lpd=0;
-  dom.addEventListener('touchstart',e=>{if(e.touches.length===1){lt=e.touches[0];isDragging=true;wasDragging=false;}if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;lpd=Math.sqrt(dx*dx+dy*dy);}},{passive:true});
-  dom.addEventListener('touchmove',e=>{e.preventDefault();if(e.touches.length===1&&lt){wasDragging=true;theta-=(e.touches[0].clientX-lt.clientX)*0.009;phi=Math.max(0.15,Math.min(1.48,phi+(e.touches[0].clientY-lt.clientY)*0.009));lt=e.touches[0];updateCamera();}if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;const d=Math.sqrt(dx*dx+dy*dy);radius=Math.max(8,Math.min(120,radius-(d-lpd)*0.07));lpd=d;updateCamera();}},{passive:false});
-  dom.addEventListener('touchend',()=>{isDragging=false;lt=null;});
+  // Sort back-to-front for painter's algorithm
+  plotRects.sort((a,b)=>(a.x+a.z)-(b.x+b.z));
 
-  // ── HOVER VIA SCALE (avoids position mutation) ────────────────
-  const raycaster=new THREE.Raycaster();
-  const mouse2=new THREE.Vector2();
-  let hoveredBody=null;
-  const HOVER_SCALE=new THREE.Vector3(1,1.6,1);
-  const BASE_SCALE=new THREE.Vector3(1,1,1);
+  // ── DRAW FUNCTION ────────────────────────────────────────────
+  function draw() {
+    ctx.clearRect(0,0,W,H);
 
-  const tip=document.createElement('div');
-  tip.style.cssText='position:absolute;display:none;z-index:999;pointer-events:none;background:#fff;border-radius:12px;padding:14px 18px;box-shadow:0 8px 32px rgba(0,0,0,.16);border:1px solid #e2e8f0;font-family:Outfit,sans-serif;min-width:215px;max-width:280px;';
+    // Background
+    ctx.fillStyle='#edeae3';
+    ctx.fillRect(0,0,W,H);
+
+    // Ground grid hint
+    ctx.save();
+    ctx.translate(panX, panY);
+    ctx.scale(zoom, zoom);
+
+    // Draw ground plane
+    const corners = [
+      iso(0,0,0), iso(gridW,0,0), iso(gridW,0,gridH), iso(0,0,gridH)
+    ];
+    ctx.beginPath();
+    ctx.moveTo(corners[0].x-camX*CX+camZ*CX, corners[0].y-(camX+camZ)*SX);
+
+    // Roads
+    const drawRoad = (afterCol) => {
+      if(!COL_X[afterCol]) return;
+      const rx = COL_X[afterCol]+BW+CGAP/2;
+      const p1=iso(rx,0,0), p2=iso(rx+ROAD,0,0), p3=iso(rx+ROAD,0,gridH), p4=iso(rx,0,gridH);
+      ctx.beginPath();
+      ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y);
+      ctx.lineTo(p3.x,p3.y); ctx.lineTo(p4.x,p4.y);
+      ctx.closePath();
+      ctx.fillStyle='#cec9bf'; ctx.fill();
+      // Centre line
+      const m1=iso(rx+ROAD/2,0,2), m2=iso(rx+ROAD/2,0,gridH-2);
+      ctx.beginPath(); ctx.moveTo(m1.x,m1.y); ctx.lineTo(m2.x,m2.y);
+      ctx.strokeStyle='rgba(255,250,220,0.6)'; ctx.lineWidth=1.5/zoom; ctx.setLineDash([8/zoom,6/zoom]);
+      ctx.stroke(); ctx.setLineDash([]);
+    };
+    [7,11,15].forEach(drawRoad);
+
+    // Draw each plot as isometric box
+    plotRects.forEach(({pn,pd,cfg,x,z,pw,pd:pdepth,h}) => {
+      const isHovered = hoveredPlot===pn;
+      const lift = isHovered ? 8 : 0;
+      const hy = h + lift;
+
+      // 8 corners of box
+      // Bottom face corners
+      const b0=iso(x,0,z), b1=iso(x+pw,0,z), b2=iso(x+pw,0,z+pdepth), b3=iso(x,0,z+pdepth);
+      // Top face corners
+      const t0=iso(x,hy,z), t1=iso(x+pw,hy,z), t2=iso(x+pw,hy,z+pdepth), t3=iso(x,hy,z+pdepth);
+
+      // LEFT face (south-west)
+      ctx.beginPath();
+      ctx.moveTo(b3.x,b3.y); ctx.lineTo(b0.x,b0.y); ctx.lineTo(t0.x,t0.y); ctx.lineTo(t3.x,t3.y);
+      ctx.closePath();
+      ctx.fillStyle = isHovered ? shadeColor(cfg.side3d||cfg.border, 20) : (cfg.side3d||cfg.border);
+      ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.3)'; ctx.lineWidth=0.5; ctx.stroke();
+
+      // RIGHT face (south-east)
+      ctx.beginPath();
+      ctx.moveTo(b1.x,b1.y); ctx.lineTo(b2.x,b2.y); ctx.lineTo(t2.x,t2.y); ctx.lineTo(t1.x,t1.y);
+      ctx.closePath();
+      ctx.fillStyle = isHovered ? shadeColor(cfg.side3d||cfg.border, 10) : darken(cfg.side3d||cfg.border, 15);
+      ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.3)'; ctx.lineWidth=0.5; ctx.stroke();
+
+      // TOP face
+      ctx.beginPath();
+      ctx.moveTo(t0.x,t0.y); ctx.lineTo(t1.x,t1.y); ctx.lineTo(t2.x,t2.y); ctx.lineTo(t3.x,t3.y);
+      ctx.closePath();
+      ctx.fillStyle = isHovered ? shadeColor(cfg.top3d||cfg.bg, 25) : (cfg.top3d||cfg.bg);
+      ctx.fill();
+      ctx.strokeStyle='rgba(0,0,0,0.1)'; ctx.lineWidth=0.5; ctx.stroke();
+
+      // Plot number on top face
+      const tc = iso(x+pw/2, hy+1, z+pdepth/2);
+      ctx.save();
+      ctx.translate(tc.x, tc.y);
+      const fs = Math.max(7, Math.min(13, BW*zoom*0.35));
+      ctx.font = `bold ${fs}px Outfit,Arial`;
+      ctx.fillStyle = cfg.text||'#374151';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.shadowColor='rgba(255,255,255,0.5)'; ctx.shadowBlur=2;
+      ctx.fillText(String(pn), 0, 0);
+      ctx.restore();
+
+      // Glow outline for hovered
+      if (isHovered) {
+        ctx.beginPath();
+        ctx.moveTo(t0.x,t0.y); ctx.lineTo(t1.x,t1.y); ctx.lineTo(t2.x,t2.y); ctx.lineTo(t3.x,t3.y);
+        ctx.closePath();
+        ctx.strokeStyle=cfg.color; ctx.lineWidth=2/zoom; ctx.stroke();
+      }
+    });
+
+    ctx.restore();
+  }
+
+  // ── COLOR HELPERS ─────────────────────────────────────────────
+  function hexToRgb(hex) {
+    const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+    return [r,g,b];
+  }
+  function shadeColor(hex, pct) {
+    if(!hex||!hex.startsWith('#')) return hex||'#888';
+    const [r,g,b]=hexToRgb(hex);
+    return `rgb(${Math.min(255,r+pct)},${Math.min(255,g+pct)},${Math.min(255,b+pct)})`;
+  }
+  function darken(hex, pct) {
+    if(!hex||!hex.startsWith('#')) return hex||'#888';
+    const [r,g,b]=hexToRgb(hex);
+    return `rgb(${Math.max(0,r-pct)},${Math.max(0,g-pct)},${Math.max(0,b-pct)})`;
+  }
+
+  // ── HIT TEST ─────────────────────────────────────────────────
+  function hitTest(mx, my) {
+    // Transform screen coords to world
+    const wx = (mx - panX)/zoom, wy = (my - panY)/zoom;
+    // Reverse isometric for y=0 plane (approximate for top face)
+    // iso: sx=(wx-wz)*cos, sy=(wx+wz)*sin-wy_3d
+    // For top face hit: check each plot
+    let best = null, bestZ = -Infinity;
+    plotRects.forEach(({pn,x,z,pw,pd:pdepth,h,pd})=>{
+      const hy = h + (hoveredPlot===pn?8:0);
+      // Check if point is in projected top face polygon
+      const t0=iso(x,hy,z), t1=iso(x+pw,hy,z), t2=iso(x+pw,hy,z+pdepth), t3=iso(x,hy,z+pdepth);
+      if (pointInPoly(wx,wy,[t0,t1,t2,t3])) {
+        const depth = x+z; // painter order = depth
+        if(depth > bestZ) { bestZ=depth; best=pn; }
+      }
+    });
+    return best;
+  }
+
+  function pointInPoly(px,py,pts) {
+    let inside=false;
+    for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+      const xi=pts[i].x,yi=pts[i].y,xj=pts[j].x,yj=pts[j].y;
+      if(((yi>py)!=(yj>py))&&(px<(xj-xi)*(py-yi)/(yj-yi)+xi)) inside=!inside;
+    }
+    return inside;
+  }
+
+  // ── TOOLTIP ──────────────────────────────────────────────────
+  const tip = document.createElement('div');
+  tip.style.cssText='position:absolute;display:none;z-index:999;pointer-events:none;background:#fff;border-radius:12px;padding:14px 18px;box-shadow:0 8px 32px rgba(0,0,0,.16);border:1px solid #e2e8f0;font-family:Outfit,sans-serif;min-width:210px;max-width:280px;';
   container.style.position='relative';
   container.appendChild(tip);
 
-  function showTip(e,pd){
-    const cfg=PLOT_STATUS[pd.status]||PLOT_STATUS.available;
-    const fmt=n=>n?'₹'+Number(n).toLocaleString('en-IN'):'—';
-    const rect=dom.getBoundingClientRect();
-    const tx=e.clientX-rect.left+18, ty=e.clientY-rect.top-10;
-    tip.style.left=(tx+280>rect.width?tx-300:tx)+'px';
-    tip.style.top=(ty+200>rect.height?ty-180:ty)+'px';
+  function showTip(pn, mx, my) {
+    const pd2 = plotData[pn];
+    if(!pd2) return;
+    const cfg = PLOT_STATUS[pd2.status]||PLOT_STATUS.available;
+    const fmt = n=>n?'₹'+Number(n).toLocaleString('en-IN'):'—';
+    const rect = container.getBoundingClientRect();
+    const tx = mx, ty = my-10;
+    tip.style.left=(tx+280>container.clientWidth?tx-295:tx+15)+'px';
+    tip.style.top=(ty<10?10:ty)+'px';
     tip.style.display='block';
     tip.innerHTML=`
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #f1f5f9">
         <div style="width:11px;height:11px;border-radius:50%;background:${cfg.color};flex-shrink:0"></div>
-        <span style="font-size:15px;font-weight:700">Plot ${pd.plot_no}</span>
+        <span style="font-size:15px;font-weight:700">Plot ${pn}</span>
         <span style="margin-left:auto;font-size:10px;padding:2px 9px;border-radius:10px;background:${cfg.bg};color:${cfg.text};font-weight:700;border:1px solid ${cfg.border}">${cfg.label}</span>
       </div>
-      ${pd.client_name
-        ?`<div style="margin-bottom:6px"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Client</div><div style="font-size:13px;font-weight:600;margin-top:2px">${pd.client_name}</div>${pd.contact?`<div style="font-size:12px;color:#64748b;margin-top:1px">📞 ${pd.contact}</div>`:''}</div>`
-        :`<div style="color:#94a3b8;font-size:12px;margin-bottom:6px;font-style:italic">Available for booking</div>`}
+      ${pd2.client_name
+        ?`<div style="margin-bottom:7px"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Client</div><div style="font-weight:600;margin-top:2px">${pd2.client_name}</div>${pd2.contact?`<div style="font-size:12px;color:#64748b">📞 ${pd2.contact}</div>`:''}</div>`
+        :`<div style="color:#94a3b8;font-size:12px;margin-bottom:7px;font-style:italic">Available for booking</div>`}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        ${pd.plot_size?`<div><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Area</div><div style="font-size:13px;font-weight:700;margin-top:2px">${pd.plot_size} sqft</div></div>`:''}
-        ${pd.agreement_value?`<div><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Value</div><div style="font-size:13px;font-weight:700;margin-top:2px">${fmt(pd.agreement_value)}</div></div>`:''}
+        ${pd2.plot_size?`<div><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Area</div><div style="font-weight:700;margin-top:2px">${pd2.plot_size} sqft</div></div>`:''}
+        ${pd2.agreement_value?`<div><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Value</div><div style="font-weight:700;margin-top:2px">${fmt(pd2.agreement_value)}</div></div>`:''}
       </div>
       <div style="margin-top:9px;font-size:10px;color:#94a3b8;text-align:center">Click to view full details →</div>`;
   }
 
-  dom.addEventListener('mousemove',e=>{
-    if(isDragging){tip.style.display='none';return;}
-    const rect=dom.getBoundingClientRect();
-    mouse2.x=((e.clientX-rect.left)/rect.width)*2-1;
-    mouse2.y=-((e.clientY-rect.top)/rect.height)*2+1;
-    raycaster.setFromCamera(mouse2,camera);
-    // Raycast only body meshes
-    const hits=raycaster.intersectObjects(plotGroups);
-    if(hits.length){
-      let bodyMesh=hits[0].object;
-      if(bodyMesh.userData.isTop) bodyMesh=bodyMesh.userData.bodyMesh;
-      if(bodyMesh!==hoveredBody){
-        if(hoveredBody) hoveredBody.scale.copy(BASE_SCALE);
-        hoveredBody=bodyMesh;
-        hoveredBody.scale.copy(HOVER_SCALE);
-        dom.style.cursor='pointer';
-      }
-      showTip(e,bodyMesh.userData.data);
-    } else {
-      if(hoveredBody){hoveredBody.scale.copy(BASE_SCALE);hoveredBody=null;dom.style.cursor='grab';}
-      tip.style.display='none';
+  // ── EVENTS ───────────────────────────────────────────────────
+  canvas.addEventListener('mousemove', e=>{
+    const r=canvas.getBoundingClientRect();
+    const mx=e.clientX-r.left, my=e.clientY-r.top;
+    if(isDragging){
+      wasDragging=true;
+      panX+=e.clientX-lastMX; panY+=e.clientY-lastMY;
+      lastMX=e.clientX; lastMY=e.clientY;
+      draw(); return;
     }
+    const hit=hitTest(mx,my);
+    if(hit!==hoveredPlot){ hoveredPlot=hit; draw(); }
+    if(hit){ showTip(hit,mx,my); canvas.style.cursor='pointer'; }
+    else { tip.style.display='none'; canvas.style.cursor='grab'; }
   });
-  dom.addEventListener('mouseleave',()=>{
-    tip.style.display='none';
-    if(hoveredBody){hoveredBody.scale.copy(BASE_SCALE);hoveredBody=null;}
+  canvas.addEventListener('mousedown', e=>{
+    isDragging=true; wasDragging=false;
+    lastMX=e.clientX; lastMY=e.clientY;
+    canvas.style.cursor='grabbing';
   });
+  window.addEventListener('mouseup', ()=>{ isDragging=false; canvas.style.cursor='grab'; });
+  canvas.addEventListener('mouseleave',()=>{ tip.style.display='none'; hoveredPlot=null; draw(); });
 
-  // Click to open detail
-  dom.addEventListener('click',e=>{
+  canvas.addEventListener('wheel', e=>{
+    e.preventDefault();
+    const factor=e.deltaY>0?0.92:1.09;
+    const r=canvas.getBoundingClientRect();
+    const mx=e.clientX-r.left, my=e.clientY-r.top;
+    panX=mx-(mx-panX)*factor; panY=my-(my-panY)*factor;
+    zoom=Math.max(0.3,Math.min(4,zoom*factor));
+    draw();
+  },{passive:false});
+
+  canvas.addEventListener('click', e=>{
     if(wasDragging){wasDragging=false;return;}
-    const rect=dom.getBoundingClientRect();
-    mouse2.x=((e.clientX-rect.left)/rect.width)*2-1;
-    mouse2.y=-((e.clientY-rect.top)/rect.height)*2+1;
-    raycaster.setFromCamera(mouse2,camera);
-    const hits=raycaster.intersectObjects(plotGroups);
-    if(hits.length){
-      let bodyMesh=hits[0].object;
-      if(bodyMesh.userData.isTop) bodyMesh=bodyMesh.userData.bodyMesh;
-      const pd=bodyMesh.userData.data;
-      const bk=S.bookings.find(b=>parseInt(b.plot_no)===pd.plot_no);
-      const pv=S.prev.find(x=>parseInt(x.plot_no)===pd.plot_no);
-      openPlotDetail(pd.plot_no,pd.status,bk,pv);
+    const r=canvas.getBoundingClientRect();
+    const hit=hitTest(e.clientX-r.left, e.clientY-r.top);
+    if(hit){
+      const bk=S.bookings.find(b=>parseInt(b.plot_no)===hit);
+      const pv=S.prev.find(x=>parseInt(x.plot_no)===hit);
+      const pd2=plotData[hit];
+      openPlotDetail(hit, pd2?.status||'available', bk, pv);
     }
   });
 
-  // ── RESIZE ────────────────────────────────────────────────────
+  // Touch
+  let lt=null,lpd2=0;
+  canvas.addEventListener('touchstart',e=>{
+    if(e.touches.length===1){lt=e.touches[0];isDragging=true;wasDragging=false;}
+    if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;lpd2=Math.sqrt(dx*dx+dy*dy);}
+  },{passive:true});
+  canvas.addEventListener('touchmove',e=>{
+    e.preventDefault();
+    if(e.touches.length===1&&lt){
+      wasDragging=true;
+      panX+=e.touches[0].clientX-lt.clientX; panY+=e.touches[0].clientY-lt.clientY;
+      lt=e.touches[0]; draw();
+    }
+    if(e.touches.length===2){
+      const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      const factor=d/lpd2;
+      zoom=Math.max(0.3,Math.min(4,zoom*factor));
+      lpd2=d; draw();
+    }
+  },{passive:false});
+  canvas.addEventListener('touchend',()=>{isDragging=false;lt=null;});
+
+  // Resize
   const ro=new ResizeObserver(()=>{
-    const w=container.clientWidth,h=container.clientHeight||600;
-    renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();
+    const nw=container.clientWidth, nh=container.clientHeight||620;
+    canvas.width=nw*window.devicePixelRatio; canvas.height=nh*window.devicePixelRatio;
+    canvas.style.width=nw+'px'; canvas.style.height=nh+'px';
+    ctx.scale(window.devicePixelRatio,window.devicePixelRatio);
+    panX=nw/2; panY=nh/2;
+    draw();
   });
   ro.observe(container);
 
-  // ── ANIMATE ───────────────────────────────────────────────────
-  let animId;
-  const animate=()=>{animId=requestAnimationFrame(animate);renderer.render(scene,camera);};
-  animate();
+  // Initial camera position - center the layout nicely
+  const initPos = iso(gridW/2,0,gridH/2);
+  panX = W/2 - initPos.x*zoom;
+  panY = H*0.55 - initPos.y*zoom;
+  zoom = Math.min(W/(gridW*1.6), H/(gridH*1.1));
 
-  container._cleanup=()=>{
-    cancelAnimationFrame(animId);ro.disconnect();
-    renderer.dispose();
-    plotGroups.forEach(m=>{m.geometry&&m.geometry.dispose();m.material&&m.material.dispose();});
-  };
+  draw();
+
+  container._cleanup=()=>{ ro.disconnect(); window.removeEventListener('mouseup',()=>{}); };
 }
 
 

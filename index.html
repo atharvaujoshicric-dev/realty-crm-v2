@@ -7,7 +7,6 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏗</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 
@@ -440,20 +439,22 @@ notes</code>
     <div class="page" id="p-plotmap">
       <div class="ph">
         <div>
-          <h1 id="plotMapTitle">Plot Map — 3D View</h1>
-          <p id="plotMapSub">Drag to rotate · Scroll to zoom · Hover for details · Click to book</p>
+          <h1 id="plotMapTitle">Plot Map</h1>
+          <p id="plotMapSub">Hover any plot for details · Click to book or view</p>
         </div>
-        <div class="ph-r">
-          <button class="btn btn-outline btn-sm" onclick="renderPlotMap()">↺ Reset View</button>
+        <div class="ph-r" style="gap:8px">
+          <input type="text" id="pm-search" placeholder="🔍 Plot no or client…" oninput="pmSearch(this.value)" style="width:180px">
+          <button class="btn btn-outline btn-sm" onclick="openPlotFilter()">⚙ Filter</button>
+          <button class="btn btn-outline btn-sm" onclick="resetPlotFilter()">✕ Reset</button>
         </div>
       </div>
-      <!-- Summary counts only -->
+      <!-- Summary counts (clickable to filter) -->
       <div id="plotSummaryBar" style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px;align-items:center"></div>
-      <!-- 3D Canvas -->
+      <!-- Isometric Plot Map -->
       <div class="card" style="padding:0;overflow:hidden;border-radius:14px">
-        <div id="plot3dContainer" style="width:100%;height:650px;background:#eae6df;cursor:grab"></div>
+        <div id="plot3dContainer" style="width:100%;height:650px;background:#f0ede6;overflow:auto"></div>
       </div>
-      <p style="text-align:center;font-size:11px;color:var(--inkf);margin-top:7px">🖱 Drag to rotate · Scroll to zoom · Click any plot to view/book</p>
+      <p style="text-align:center;font-size:11px;color:var(--inkf);margin-top:7px">Hover a plot for details · Click to view booking or book available plots · Click a status pill to filter</p>
     </div>
 
         <!-- DASHBOARD -->
@@ -597,7 +598,7 @@ notes</code>
         </div>
         <div class="tw">
           <table>
-            <thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Type</th><th>Record</th></tr></thead>
+            <thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Type</th><th>Record / Detail</th></tr></thead>
             <tbody id="audit-body"><tr><td colspan="6"><div class="lc"><div class="spin spin-dk"></div></div></td></tr></tbody>
           </table>
         </div>
